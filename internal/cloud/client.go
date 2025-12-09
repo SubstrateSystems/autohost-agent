@@ -63,5 +63,5 @@ type HeartbeatPayload struct {
 }
 
 func (c *Client) SendHeartbeat(ctx context.Context, hb HeartbeatPayload) error {
-	return c.post(ctx, "/v1/agents/heartbeat", hb)
+	return c.post(ctx, "/v1/heartbeats/heartbeat", hb)
 }

@@ -12,11 +12,14 @@ import (
 )
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
 	if len(os.Args) < 2 {
 		log.Fatal("usage: autohost-agent <config-path>")
 	}
 	cfgPath := os.Args[1]
 
+	log.Printf("Loading configuration from: %s", cfgPath)
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		log.Fatalf("loading config: %v", err)
@@ -27,7 +30,9 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	log.Println("Starting Autohost Agent...")
 	if err := a.Run(ctx); err != nil {
 		log.Fatalf("agent stopped: %v", err)
 	}
+	log.Println("Agent stopped gracefully")
 }

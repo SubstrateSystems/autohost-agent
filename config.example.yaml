@@ -1,0 +1,9 @@
+# Autohost Agent Configuration Example
+
+api_url: "https://api.autohost.example.com"
+agent_token: "your-api-token-here"
+node_id: "node-001"
+tags:
+  - "production"
+  - "web-server"
+  - "us-east-1"
