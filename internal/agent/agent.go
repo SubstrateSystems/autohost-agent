@@ -32,17 +32,30 @@ func (a *Agent) Run(ctx context.Context) error {
 		log.Println("Initial heartbeat sent successfully")
 	}
 
-	ticker := time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
+	// Enviar métricas inicial
+	if err := a.sendMetrics(ctx); err != nil {
+		log.Printf("error sending initial metrics: %v", err)
+	} else {
+		log.Println("Initial metrics sent successfully")
+	}
+
+	heartbeatTicker := time.NewTicker(15 * time.Second)
+	metricsTicker := time.NewTicker(15 * time.Second)
+	defer heartbeatTicker.Stop()
+	defer metricsTicker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			log.Println("Agent shutting down...")
 			return ctx.Err()
-		case <-ticker.C:
+		case <-heartbeatTicker.C:
 			if err := a.sendHeartbeat(ctx); err != nil {
 				log.Printf("error sending heartbeat: %v", err)
+			}
+		case <-metricsTicker.C:
+			if err := a.sendMetrics(ctx); err != nil {
+				log.Printf("error sending metrics: %v", err)
 			}
 		}
 	}
@@ -65,4 +78,25 @@ func (a *Agent) sendHeartbeat(ctx context.Context) error {
 		UptimeSeconds: uptime,
 	}
 	return a.cl.SendHeartbeat(ctx, hb)
+}
+
+func (a *Agent) sendMetrics(ctx context.Context) error {
+	metrics, err := system.GetMetrics()
+	if err != nil {
+		return err
+	}
+
+	payload := cloud.MetricsPayload{
+		CPUUsagePercent:      metrics.CPUUsagePercent,
+		MemoryTotalBytes:     metrics.MemoryTotalBytes,
+		MemoryUsedBytes:      metrics.MemoryUsedBytes,
+		MemoryAvailableBytes: metrics.MemoryAvailableBytes,
+		MemoryUsagePercent:   metrics.MemoryUsagePercent,
+		DiskTotalBytes:       metrics.DiskTotalBytes,
+		DiskUsedBytes:        metrics.DiskUsedBytes,
+		DiskAvailableBytes:   metrics.DiskAvailableBytes,
+		DiskUsagePercent:     metrics.DiskUsagePercent,
+	}
+
+	return a.cl.SendMetrics(ctx, payload)
 }

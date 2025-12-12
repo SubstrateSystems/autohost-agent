@@ -89,9 +89,22 @@ sudo journalctl -u autohost-agent -f
   - `os`: Sistema operativo (linux)
   - `uptime_seconds`: Tiempo de actividad del sistema en segundos
 
+### Métricas del Sistema
+- **Endpoint**: `POST /node-metrics/metrics`
+- **Frecuencia**: Cada 60 segundos
+- **Datos enviados**:
+  - `cpu_usage_percent`: Porcentaje de uso de CPU
+  - `memory_total_bytes`: Memoria total en bytes
+  - `memory_used_bytes`: Memoria usada en bytes
+  - `memory_available_bytes`: Memoria disponible en bytes
+  - `memory_usage_percent`: Porcentaje de uso de memoria
+  - `disk_total_bytes`: Espacio total en disco en bytes
+  - `disk_used_bytes`: Espacio usado en disco en bytes
+  - `disk_available_bytes`: Espacio disponible en disco en bytes
+  - `disk_usage_percent`: Porcentaje de uso de disco
+
 ## Próximas Funcionalidades
 
-- Métricas de sistema (CPU, memoria, disco)
 - Logs del sistema
 - Ejecución de comandos remotos
 - Actualizaciones automáticas

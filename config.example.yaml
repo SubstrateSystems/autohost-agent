@@ -1,7 +1,7 @@
 # Autohost Agent Configuration Example
 
-api_url: "https://api.autohost.example.com"
-agent_token: "your-api-token-here"
+api_url: "http://10.39.5.1:8080"
+agent_token: "autohost-node_HaeEcy9zv1zyIdlXqdcS4dk8ipcuSN8ZGRrMHDzXamo"
 node_id: "node-001"
 tags:
   - "production"
