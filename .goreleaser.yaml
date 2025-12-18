@@ -1,0 +1,35 @@
+version: 2
+project_name: autohost-agent
+
+release:
+  draft: false
+  prerelease: auto
+
+builds:
+  - id: autohost-agent
+    main: ./cmd/agent
+    binary: autohost-agent
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags: [ -trimpath ]
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: binario_plano
+    ids: [autohost-agent]
+    formats: [binary]
+    name_template: "{{ .Binary }}-{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: "checksums_{{ .Version }}.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude: ['^docs?:', '^chore:', '^test:', '^ci:']
