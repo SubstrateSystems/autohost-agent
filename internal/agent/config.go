@@ -1,4 +1,4 @@
-package config
+package agent
 
 import (
 	"os"
@@ -23,4 +23,14 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+// GetNodeID returns the node ID.
+func (c *Config) GetNodeID() string {
+	return c.NodeID
+}
+
+// GetTags returns the tags.
+func (c *Config) GetTags() []string {
+	return c.Tags
 }

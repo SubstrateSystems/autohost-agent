@@ -1,14 +1,15 @@
-.PHONY: build clean install uninstall run test deploy-vm vm-start vm-stop vm-status vm-logs vm-shell
+.PHONY: build clean install uninstall run test deploy-vm vm-start vm-stop vm-status vm-logs vm-shell deploy-incus incus-start incus-stop incus-status incus-logs incus-shell
 
 BINARY_NAME=autohost-agent
 INSTALL_PATH=/usr/local/bin
 CONFIG_PATH=/etc/autohost
 SERVICE_PATH=/etc/systemd/system
 VM_NAME=autohost-test
+INCUS_INSTANCE=autohost-test
 
 build:
 	@echo "Building $(BINARY_NAME)..."
-	go build -o $(BINARY_NAME) cmd/autohost-agent/main.go
+	go build -o $(BINARY_NAME) cmd/agent/main.go
 	@echo "Build complete: ./$(BINARY_NAME)"
 
 clean:
@@ -22,7 +23,7 @@ install: build
 	sudo cp $(BINARY_NAME) $(INSTALL_PATH)/
 	sudo cp autohost-agent.service $(SERVICE_PATH)/
 	@if [ ! -f $(CONFIG_PATH)/config.yaml ]; then \
-		sudo cp config.example.yaml $(CONFIG_PATH)/config.yaml; \
+		sudo cp configs/agent.yaml $(CONFIG_PATH)/config.yaml; \
 		sudo chmod 600 $(CONFIG_PATH)/config.yaml; \
 		echo "Created config file at $(CONFIG_PATH)/config.yaml - PLEASE EDIT IT"; \
 	fi
@@ -64,17 +65,17 @@ deploy-vm: build
 	@echo "Deploying to VM $(VM_NAME)..."
 	@echo "1. Transferring files..."
 	multipass transfer $(BINARY_NAME) $(VM_NAME):/home/ubuntu/
-	multipass transfer config.example.yaml $(VM_NAME):/home/ubuntu/
+	multipass transfer configs/agent.yaml $(VM_NAME):/home/ubuntu/
 	multipass transfer autohost-agent.service $(VM_NAME):/home/ubuntu/
 	@echo "2. Installing on VM..."
 	multipass exec $(VM_NAME) -- sudo mkdir -p $(CONFIG_PATH)
 	multipass exec $(VM_NAME) -- sudo cp /home/ubuntu/$(BINARY_NAME) $(INSTALL_PATH)/
-	multipass exec $(VM_NAME) -- sudo cp /home/ubuntu/config.example.yaml $(CONFIG_PATH)/config.yaml
+	multipass exec $(VM_NAME) -- sudo cp /home/ubuntu/agent.yaml $(CONFIG_PATH)/config.yaml
 	multipass exec $(VM_NAME) -- sudo chmod 600 $(CONFIG_PATH)/config.yaml
 	multipass exec $(VM_NAME) -- sudo cp /home/ubuntu/autohost-agent.service $(SERVICE_PATH)/
 	multipass exec $(VM_NAME) -- sudo systemctl daemon-reload
 	@echo "3. Cleaning up temporary files..."
-	multipass exec $(VM_NAME) -- rm /home/ubuntu/$(BINARY_NAME) /home/ubuntu/config.example.yaml /home/ubuntu/autohost-agent.service
+	multipass exec $(VM_NAME) -- rm /home/ubuntu/$(BINARY_NAME) /home/ubuntu/agent.yaml /home/ubuntu/autohost-agent.service
 	@echo ""
 	@echo "✓ Deployment complete!"
 	@echo "  Binary installed at: $(INSTALL_PATH)/$(BINARY_NAME)"
@@ -106,3 +107,51 @@ vm-logs:
 
 vm-shell:
 	multipass shell $(VM_NAME)
+
+# Incus deployment and management targets
+deploy-incus: build
+	@echo "Deploying to Incus instance $(INCUS_INSTANCE)..."
+	@echo "1. Transferring files..."
+	incus file push $(BINARY_NAME) $(INCUS_INSTANCE)/home/ubuntu/
+	incus file push configs/agent.yaml $(INCUS_INSTANCE)/home/ubuntu/
+	incus file push autohost-agent.service $(INCUS_INSTANCE)/home/ubuntu/
+	@echo "2. Installing on instance..."
+	incus exec $(INCUS_INSTANCE) -- sudo mkdir -p $(CONFIG_PATH)
+	incus exec $(INCUS_INSTANCE) -- sudo cp /home/ubuntu/$(BINARY_NAME) $(INSTALL_PATH)/
+	incus exec $(INCUS_INSTANCE) -- sudo cp /home/ubuntu/agent.yaml $(CONFIG_PATH)/config.yaml
+	incus exec $(INCUS_INSTANCE) -- sudo chmod 600 $(CONFIG_PATH)/config.yaml
+	incus exec $(INCUS_INSTANCE) -- sudo cp /home/ubuntu/autohost-agent.service $(SERVICE_PATH)/
+	incus exec $(INCUS_INSTANCE) -- sudo systemctl daemon-reload
+	@echo "3. Cleaning up temporary files..."
+	incus exec $(INCUS_INSTANCE) -- rm /home/ubuntu/$(BINARY_NAME) /home/ubuntu/agent.yaml /home/ubuntu/autohost-agent.service
+	@echo ""
+	@echo "✓ Deployment complete!"
+	@echo "  Binary installed at: $(INSTALL_PATH)/$(BINARY_NAME)"
+	@echo "  Config file at: $(CONFIG_PATH)/config.yaml"
+	@echo "  Service file at: $(SERVICE_PATH)/autohost-agent.service"
+	@echo ""
+	@echo "Next steps:"
+	@echo "  1. Edit config: incus exec $(INCUS_INSTANCE) -- sudo nano $(CONFIG_PATH)/config.yaml"
+	@echo "  2. Enable service: incus exec $(INCUS_INSTANCE) -- sudo systemctl enable autohost-agent"
+	@echo "  3. Start service: incus exec $(INCUS_INSTANCE) -- sudo systemctl start autohost-agent"
+	@echo "  4. Check status: incus exec $(INCUS_INSTANCE) -- sudo systemctl status autohost-agent"
+
+incus-start:
+	@echo "Starting service on Incus instance..."
+	incus exec $(INCUS_INSTANCE) -- sudo systemctl enable autohost-agent
+	incus exec $(INCUS_INSTANCE) -- sudo systemctl start autohost-agent
+	@echo "Service started. Use 'make incus-status' to check status"
+
+incus-stop:
+	@echo "Stopping service on Incus instance..."
+	incus exec $(INCUS_INSTANCE) -- sudo systemctl stop autohost-agent
+	@echo "Service stopped"
+
+incus-status:
+	incus exec $(INCUS_INSTANCE) -- sudo systemctl status autohost-agent
+
+incus-logs:
+	incus exec $(INCUS_INSTANCE) -- sudo journalctl -u autohost-agent -f
+
+incus-shell:
+	incus exec $(INCUS_INSTANCE) -- bash

@@ -8,7 +8,6 @@ import (
 	"syscall"
 
 	"autohost-agent/internal/agent"
-	"autohost-agent/internal/config"
 )
 
 func main() {
@@ -20,7 +19,7 @@ func main() {
 	cfgPath := os.Args[1]
 
 	log.Printf("Loading configuration from: %s", cfgPath)
-	cfg, err := config.Load(cfgPath)
+	cfg, err := agent.Load(cfgPath)
 	if err != nil {
 		log.Fatalf("loading config: %v", err)
 	}
