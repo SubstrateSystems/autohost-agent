@@ -7,26 +7,60 @@ Agent de monitorización para Linux que reporta el estado del nodo a una API cen
 ```
 autohost-agent/
 ├── cmd/
-│   └── autohost-agent/     # Punto de entrada principal
+│   └── agent/              # Punto de entrada principal
 │       └── main.go
+│
 ├── internal/
 │   ├── agent/              # Lógica principal del agente
-│   │   └── agent.go
-│   ├── cloud/              # Cliente HTTP para la API
-│   │   └── client.go
-│   ├── config/             # Configuración del agente
+│   │   ├── agent.go
+│   │   ├── lifecycle.go
 │   │   └── config.go
-│   └── system/             # Utilidades del sistema (uptime, etc)
-│       └── uptime.go
-├── config.example.yaml     # Ejemplo de configuración
-└── go.mod
+│   │
+│   ├── enrollment/         # Registro de nuevos agentes
+│   │   ├── service.go
+│   │   └── token.go
+│   │
+│   ├── heartbeat/          # Envío de heartbeats
+│   │   ├── service.go
+│   │   └── payload.go
+│   │
+│   ├── metrics/            # Recolección de métricas
+│   │   ├── collector.go
+│   │   └── model.go
+│   │
+│   ├── jobs/               # Ejecución de trabajos
+│   │   ├── runner.go
+│   │   └── job.go
+│   │
+│   ├── transport/          # Comunicación con el backend
+│   │   ├── httpclient.go
+│   │   └── wsclient.go
+│   │
+│   └── security/           # Seguridad y autenticación
+│       ├── signer.go
+│       └── identity.go
+│
+├── pkg/
+│   └── sysinfo/            # Información del sistema
+│       ├── cpu.go
+│       ├── memory.go
+│       └── disk.go
+│
+├── configs/
+│   └── agent.yaml          # Configuración de ejemplo
+│
+├── scripts/
+│   └── install.sh          # Script de instalación
+│
+├── go.mod
+└── README.md
 ```
 
 ## Configuración
 
 1. Copia el archivo de configuración de ejemplo:
 ```bash
-cp config.example.yaml /etc/autohost/config.yaml
+cp configs/agent.yaml /etc/autohost/config.yaml
 ```
 
 2. Edita el archivo de configuración con tus valores:
@@ -42,7 +76,9 @@ tags:
 ## Compilación
 
 ```bash
-go build -o autohost-agent cmd/autohost-agent/main.go
+make build
+# o directamente:
+go build -o autohost-agent cmd/agent/main.go
 ```
 
 ## Ejecución
@@ -53,6 +89,14 @@ go build -o autohost-agent cmd/autohost-agent/main.go
 ```
 
 ### Como servicio systemd (producción)
+
+#### Opción 1: Usar el script de instalación
+```bash
+make build
+sudo ./scripts/install.sh
+```
+
+#### Opción 2: Instalación manual
 
 1. Copia el binario:
 ```bash
@@ -77,6 +121,17 @@ sudo systemctl status autohost-agent
 sudo journalctl -u autohost-agent -f
 ```
 
+## Makefile
+
+El proyecto incluye un Makefile con los siguientes comandos:
+
+- `make build` - Compilar el binario
+- `make clean` - Limpiar archivos compilados
+- `make install` - Instalar el agente como servicio
+- `make uninstall` - Desinstalar el agente
+- `make enable` - Habilitar e iniciar el servicio
+- `make disable` - Detener y deshabilitar el servicio
+
 ## Funcionalidades Actuales
 
 ### Heartbeat
@@ -90,14 +145,12 @@ sudo journalctl -u autohost-agent -f
   - `uptime_seconds`: Tiempo de actividad del sistema en segundos
 
 ### Métricas del Sistema
-- **Endpoint**: `POST /node-metrics/metrics`
-- **Frecuencia**: Cada 60 segundos
+- **Endpoint**: `POST /v1/node-metrics/metrics`
+- **Frecuencia**: Cada 15 segundos
 - **Datos enviados**:
-  - `cpu_usage_percent`: Porcentaje de uso de CPU
-  - `memory_total_bytes`: Memoria total en bytes
-  - `memory_used_bytes`: Memoria usada en bytes
-  - `memory_available_bytes`: Memoria disponible en bytes
-  - `memory_usage_percent`: Porcentaje de uso de memoria
+  - **CPU**: Porcentaje de uso
+  - **Memoria**: Total, usado, disponible y porcentaje
+  - **Disco**: Total, usado, disponible y porcentaje (partición raíz)
   - `disk_total_bytes`: Espacio total en disco en bytes
   - `disk_used_bytes`: Espacio usado en disco en bytes
   - `disk_available_bytes`: Espacio disponible en disco en bytes

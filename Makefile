@@ -8,7 +8,7 @@ VM_NAME=autohost-test
 
 build:
 	@echo "Building $(BINARY_NAME)..."
-	go build -o $(BINARY_NAME) cmd/autohost-agent/main.go
+	go build -o $(BINARY_NAME) cmd/agent/main.go
 	@echo "Build complete: ./$(BINARY_NAME)"
 
 clean:
@@ -22,7 +22,7 @@ install: build
 	sudo cp $(BINARY_NAME) $(INSTALL_PATH)/
 	sudo cp autohost-agent.service $(SERVICE_PATH)/
 	@if [ ! -f $(CONFIG_PATH)/config.yaml ]; then \
-		sudo cp config.example.yaml $(CONFIG_PATH)/config.yaml; \
+		sudo cp configs/agent.yaml $(CONFIG_PATH)/config.yaml; \
 		sudo chmod 600 $(CONFIG_PATH)/config.yaml; \
 		echo "Created config file at $(CONFIG_PATH)/config.yaml - PLEASE EDIT IT"; \
 	fi
