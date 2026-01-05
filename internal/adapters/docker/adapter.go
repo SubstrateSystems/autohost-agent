@@ -7,9 +7,9 @@ type Adapter struct{}
 func New() *Adapter { return &Adapter{} }
 
 func (a *Adapter) Install() error                         { return Install() }
-func (a *Adapter) StopApp(appName domain.AppName) error   { return StopApp(appName) }
-func (a *Adapter) StartApp(appName domain.AppName) error  { return StartApp(appName) }
-func (a *Adapter) RemoveApp(appName domain.AppName) error { return RemoveApp(appName) }
+func (a *Adapter) StopApp(appName domain.AppName) error   { return Stop(appName) }
+func (a *Adapter) StartApp(appName domain.AppName) error  { return Start(appName) }
+func (a *Adapter) RemoveApp(appName domain.AppName) error { return Remove(appName) }
 func (a *Adapter) GetAppStatus(appName domain.AppName) (string, error) {
 	return GetAppStatus(appName)
 }
