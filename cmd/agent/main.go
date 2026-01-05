@@ -8,9 +8,13 @@ import (
 	"syscall"
 
 	"autohost-agent/internal/agent"
+	"autohost-agent/pkg/dir"
 )
 
 func main() {
+	if err := ensureAutohostDirs(); err != nil {
+		log.Fatalf("creating autohost dirs: %v", err)
+	}
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	if len(os.Args) < 2 {
@@ -34,4 +38,23 @@ func main() {
 		log.Fatalf("agent stopped: %v", err)
 	}
 	log.Println("Agent stopped gracefully")
+}
+
+func ensureAutohostDirs() error {
+	subdirs := []string{
+		"config",
+		"templates",
+		"apps",
+		"logs",
+		"state",
+		"backups",
+		"config",
+	}
+
+	for _, sub := range subdirs {
+		if err := os.MkdirAll(dir.GetSubdir(sub), 0755); err != nil {
+			return err
+		}
+	}
+	return nil
 }
