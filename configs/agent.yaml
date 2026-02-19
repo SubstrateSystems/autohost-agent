@@ -1,7 +1,7 @@
 # Autohost Agent Configuration Example
 
 api_url: "http://10.39.5.1:8080"
-ws_url: "ws://10.39.5.1:8080/ws"
+zws_url: "ws://10.39.5.1:8080/ws"
 agent_token: "autohost-node_HaeEcy9zv1zyIdlXqdcS4dk8ipcuSN8ZGRrMHDzXamo"
 node_id: "node-001"
 tags:
