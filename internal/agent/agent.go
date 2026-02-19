@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"autohost-agent/internal/heartbeat"
+	"autohost-agent/internal/jobs"
 	"autohost-agent/internal/metrics"
 	"autohost-agent/internal/transport"
 )
@@ -16,6 +17,8 @@ type Agent struct {
 	heartbeatService  *heartbeat.Service
 	metricsCollector  *metrics.Collector
 	httpClient        *transport.HTTPClient
+	wsClient          *transport.WSClient
+	jobRunner         *jobs.Runner
 	heartbeatInterval time.Duration
 	metricsInterval   time.Duration
 }
@@ -25,12 +28,16 @@ func New(cfg *Config) *Agent {
 	httpClient := transport.NewHTTPClient(cfg.APIURL, cfg.AgentToken)
 	heartbeatService := heartbeat.NewService(cfg, httpClient)
 	metricsCollector := metrics.NewCollector()
+	jobRunner := jobs.NewRunner()
+	wsClient := transport.NewWSClient(cfg.WSURL, cfg.AgentToken, jobRunner)
 
 	return &Agent{
 		cfg:               cfg,
 		heartbeatService:  heartbeatService,
 		metricsCollector:  metricsCollector,
 		httpClient:        httpClient,
+		wsClient:          wsClient,
+		jobRunner:         jobRunner,
 		heartbeatInterval: 15 * time.Second,
 		metricsInterval:   15 * time.Second,
 	}
@@ -54,10 +61,18 @@ func (a *Agent) Run(ctx context.Context) error {
 		log.Println("Initial metrics sent successfully")
 	}
 
+	// Conectar WebSocket para recibir comandos
+	go func() {
+		if err := a.wsClient.Connect(ctx); err != nil {
+			log.Printf("WebSocket connection ended: %v", err)
+		}
+	}()
+
 	heartbeatTicker := time.NewTicker(a.heartbeatInterval)
 	metricsTicker := time.NewTicker(a.metricsInterval)
 	defer heartbeatTicker.Stop()
 	defer metricsTicker.Stop()
+	defer a.wsClient.Close()
 
 	for {
 		select {

@@ -8,6 +8,7 @@ import (
 
 type Config struct {
 	APIURL     string   `yaml:"api_url"`
+	WSURL      string   `yaml:"ws_url"`
 	AgentToken string   `yaml:"agent_token"`
 	NodeID     string   `yaml:"node_id"`
 	Tags       []string `yaml:"tags"`
