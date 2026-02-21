@@ -8,30 +8,31 @@ import (
 	"sync"
 	"time"
 
-	"autohost-agent/internal/jobs"
+	"autohost-agent/internal/commands"
+	"autohost-agent/internal/domain"
 
 	"github.com/gorilla/websocket"
 )
 
-// WSClient handles WebSocket communication with the backend.
+// WSClient handles WebSocket communication with the API for receiving jobs.
 type WSClient struct {
-	url    string
-	token  string
-	conn   *websocket.Conn
-	mu     sync.Mutex
-	runner *jobs.Runner
+	url      string
+	token    string
+	conn     *websocket.Conn
+	mu       sync.Mutex
+	registry *commands.Registry
 }
 
 // NewWSClient creates a new WebSocket client.
-func NewWSClient(url, token string, runner *jobs.Runner) *WSClient {
+func NewWSClient(url, token string, registry *commands.Registry) *WSClient {
 	return &WSClient{
-		url:    url,
-		token:  token,
-		runner: runner,
+		url:      url,
+		token:    token,
+		registry: registry,
 	}
 }
 
-// Connect establishes a WebSocket connection and handles reconnection.
+// Connect establishes and maintains a WebSocket connection with automatic reconnection.
 func (c *WSClient) Connect(ctx context.Context) error {
 	for {
 		select {
@@ -47,7 +48,6 @@ func (c *WSClient) Connect(ctx context.Context) error {
 	}
 }
 
-// connectOnce attempts to connect once and handle messages.
 func (c *WSClient) connectOnce(ctx context.Context) error {
 	headers := http.Header{}
 	headers.Add("Authorization", "Bearer "+c.token)
@@ -65,13 +65,11 @@ func (c *WSClient) connectOnce(ctx context.Context) error {
 
 	log.Println("WebSocket connected successfully")
 
-	// Enviar mensaje de identificación
 	if err := c.sendIdentification(); err != nil {
 		log.Printf("Failed to send identification: %v", err)
 		return err
 	}
 
-	// Leer mensajes en loop
 	for {
 		select {
 		case <-ctx.Done():
@@ -87,61 +85,55 @@ func (c *WSClient) connectOnce(ctx context.Context) error {
 	}
 }
 
-// sendIdentification sends initial identification message.
 func (c *WSClient) sendIdentification() error {
-	msg := map[string]interface{}{
+	msg := map[string]any{
 		"type": "identify",
-		"data": map[string]string{
-			"version": "1.0.0",
-		},
+		"data": map[string]string{"version": "1.0.0"},
 	}
 	return c.send(msg)
 }
 
-// handleMessage processes incoming messages from the server.
 func (c *WSClient) handleMessage(ctx context.Context, message []byte) {
 	log.Printf("Received message: %s", string(message))
 
-	var job jobs.Job
+	var job domain.Job
 	if err := json.Unmarshal(message, &job); err != nil {
 		log.Printf("Failed to unmarshal job: %v", err)
 		return
 	}
 
-	// Ejecutar el job
-	if err := c.runner.Execute(ctx, &job); err != nil {
+	job.Status = domain.JobStatusRunning
+
+	if err := c.registry.Execute(ctx, job.Type, job.Payload); err != nil {
 		log.Printf("Job execution failed: %v", err)
-		c.sendJobResult(&job, "failed", err.Error())
+		job.Status = domain.JobStatusFailed
+		c.sendJobResult(&job, domain.JobStatusFailed, err.Error())
 	} else {
 		log.Printf("Job completed successfully: %s", job.ID)
-		c.sendJobResult(&job, "completed", "")
+		job.Status = domain.JobStatusCompleted
+		c.sendJobResult(&job, domain.JobStatusCompleted, "")
 	}
 }
 
-// sendJobResult sends the job execution result back to the server.
-func (c *WSClient) sendJobResult(job *jobs.Job, status, errorMsg string) {
-	result := map[string]interface{}{
+func (c *WSClient) sendJobResult(job *domain.Job, status, errorMsg string) {
+	result := map[string]any{
 		"type":         "job_result",
 		"job_id":       job.ID,
 		"status":       status,
 		"error":        errorMsg,
 		"completed_at": time.Now().Unix(),
 	}
-
 	if err := c.send(result); err != nil {
 		log.Printf("Failed to send job result: %v", err)
 	}
 }
 
-// send sends a JSON message through the WebSocket connection.
-func (c *WSClient) send(msg interface{}) error {
+func (c *WSClient) send(msg any) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
 	if c.conn == nil {
-		return nil // Connection not ready
+		return nil
 	}
-
 	return c.conn.WriteJSON(msg)
 }
 
@@ -149,7 +141,6 @@ func (c *WSClient) send(msg interface{}) error {
 func (c *WSClient) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
 	if c.conn != nil {
 		return c.conn.Close()
 	}

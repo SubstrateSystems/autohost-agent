@@ -46,6 +46,17 @@ func Remove(appName domain.AppName) error {
 	return shell.Exec("rm", "-rf", appDir)
 }
 
+func ListContainers() error {
+	cmd := exec.Command("docker", "ps", "--format", "{{.Names}}\t{{.Status}}")
+	out, err := cmd.Output()
+	if err != nil {
+		return err
+	}
+	fmt.Println("Contenedores en ejecución:")
+	fmt.Println(string(out))
+	return nil
+}
+
 func GetAppStatus(appName domain.AppName) (string, error) {
 	ymlPath := filepath.Join(dir.GetSubdir("apps"), string(appName), "compose.yml")
 

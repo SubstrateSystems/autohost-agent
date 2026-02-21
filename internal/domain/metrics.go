@@ -1,6 +1,6 @@
-package metrics
+package domain
 
-// Metrics represents system metrics that will be sent to the API.
+// Metrics holds system resource usage data collected from the node.
 type Metrics struct {
 	CPUUsagePercent      float64 `json:"cpu_usage_percent"`
 	MemoryTotalBytes     uint64  `json:"memory_total_bytes"`

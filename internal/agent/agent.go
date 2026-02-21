@@ -5,63 +5,66 @@ import (
 	"log"
 	"time"
 
-	"autohost-agent/internal/heartbeat"
-	"autohost-agent/internal/jobs"
-	"autohost-agent/internal/metrics"
+	"autohost-agent/internal/api"
+	"autohost-agent/internal/commands"
+	"autohost-agent/internal/services"
 	"autohost-agent/internal/transport"
 )
 
-// Agent represents the main agent orchestrator.
+// Agent is the top-level orchestrator that coordinates all subsystems:
+// heartbeats, metrics collection, WebSocket command reception, and job execution.
 type Agent struct {
 	cfg               *Config
-	heartbeatService  *heartbeat.Service
-	metricsCollector  *metrics.Collector
-	httpClient        *transport.HTTPClient
+	apiClient         *api.Client
+	heartbeatService  *services.HeartbeatService
+	metricsService    *services.MetricsService
 	wsClient          *transport.WSClient
-	jobRunner         *jobs.Runner
+	registry          *commands.Registry
 	heartbeatInterval time.Duration
 	metricsInterval   time.Duration
 }
 
-// New creates a new agent instance.
+// New creates and wires all agent subsystems.
 func New(cfg *Config) *Agent {
-	httpClient := transport.NewHTTPClient(cfg.APIURL, cfg.AgentToken)
-	heartbeatService := heartbeat.NewService(cfg, httpClient)
-	metricsCollector := metrics.NewCollector()
-	jobRunner := jobs.NewRunner()
-	wsClient := transport.NewWSClient(cfg.WSURL, cfg.AgentToken, jobRunner)
+	apiClient := api.NewClient(cfg.APIURL, cfg.AgentToken)
+	heartbeatService := services.NewHeartbeatService(cfg, apiClient)
+	metricsService := services.NewMetricsService()
+
+	registry := commands.NewRegistry()
+	commands.RegisterAll(registry)
+
+	wsClient := transport.NewWSClient(cfg.WSURL, cfg.AgentToken, registry)
 
 	return &Agent{
 		cfg:               cfg,
+		apiClient:         apiClient,
 		heartbeatService:  heartbeatService,
-		metricsCollector:  metricsCollector,
-		httpClient:        httpClient,
+		metricsService:    metricsService,
 		wsClient:          wsClient,
-		jobRunner:         jobRunner,
+		registry:          registry,
 		heartbeatInterval: 15 * time.Second,
 		metricsInterval:   15 * time.Second,
 	}
 }
 
-// Run starts the agent lifecycle.
+// Run starts the agent main loop: heartbeats, metrics, and WebSocket listener.
 func (a *Agent) Run(ctx context.Context) error {
 	log.Printf("Agent starting - NodeID: %s, API: %s", a.cfg.NodeID, a.cfg.APIURL)
 
-	// Enviar heartbeat inicial
+	// Send initial heartbeat and metrics immediately.
 	if err := a.heartbeatService.Send(ctx); err != nil {
 		log.Printf("error sending initial heartbeat: %v", err)
 	} else {
 		log.Println("Initial heartbeat sent successfully")
 	}
 
-	// Enviar métricas inicial
 	if err := a.sendMetrics(ctx); err != nil {
 		log.Printf("error sending initial metrics: %v", err)
 	} else {
 		log.Println("Initial metrics sent successfully")
 	}
 
-	// Conectar WebSocket para recibir comandos
+	// Connect WebSocket for job reception.
 	go func() {
 		if err := a.wsClient.Connect(ctx); err != nil {
 			log.Printf("WebSocket connection ended: %v", err)
@@ -91,12 +94,10 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 }
 
-// sendMetrics collects and sends metrics.
 func (a *Agent) sendMetrics(ctx context.Context) error {
-	metrics, err := a.metricsCollector.Collect()
+	metrics, err := a.metricsService.Collect()
 	if err != nil {
 		return err
 	}
-
-	return a.httpClient.SendMetrics(ctx, metrics)
+	return a.apiClient.SendMetrics(ctx, metrics)
 }

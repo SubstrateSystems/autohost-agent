@@ -1,7 +1,7 @@
-package heartbeat
+package domain
 
-// Payload represents the heartbeat information sent to the API.
-type Payload struct {
+// HeartbeatPayload represents the data sent in each heartbeat to the API.
+type HeartbeatPayload struct {
 	NodeID        string   `json:"node_id"`
 	Hostname      string   `json:"hostname"`
 	Tags          []string `json:"tags"`
