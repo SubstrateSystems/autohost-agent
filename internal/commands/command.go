@@ -45,4 +45,5 @@ func RegisterAll(r *Registry) {
 	r.Register("app.restart", &AppRestart{})
 	r.Register("app.remove", &AppRemove{})
 	r.Register("docker.install", &DockerInstall{})
+	r.Register("script.exec", &ScriptExec{})
 }
