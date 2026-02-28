@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 )
@@ -10,6 +11,17 @@ func Exec(cmd string, args ...string) error {
 	c.Stdout, c.Stderr = os.Stdout, os.Stderr
 	return c.Run()
 }
+
+// ExecWithOutput runs a command and returns the combined stdout+stderr output.
+func ExecWithOutput(cmd string, args ...string) (string, error) {
+	c := exec.Command(cmd, args...)
+	var buf bytes.Buffer
+	c.Stdout = &buf
+	c.Stderr = &buf
+	err := c.Run()
+	return buf.String(), err
+}
+
 func ExecShell(script string) error {
 	// bash con -e (stop on error) y -o pipefail
 	return Exec("bash", "-eo", "pipefail", "-c", script)

@@ -104,10 +104,11 @@ func (c *WSClient) handleMessage(ctx context.Context, message []byte) {
 
 	job.Status = domain.JobStatusRunning
 
-	if err := c.registry.Execute(ctx, job.Type, job.Payload); err != nil {
-		log.Printf("Job execution failed: %v", err)
+	res := c.registry.Execute(ctx, job.Type, job.Payload)
+	if res.Err != nil {
+		log.Printf("Job execution failed: %v", res.Err)
 		job.Status = domain.JobStatusFailed
-		c.sendJobResult(&job, domain.JobStatusFailed, err.Error())
+		c.sendJobResult(&job, domain.JobStatusFailed, res.Err.Error())
 	} else {
 		log.Printf("Job completed successfully: %s", job.ID)
 		job.Status = domain.JobStatusCompleted

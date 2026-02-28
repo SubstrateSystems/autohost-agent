@@ -3,6 +3,17 @@ package commands
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+
+	"autohost-agent/internal/domain"
+)
+
+// CommandKind distinguishes built-in commands from user-created shell scripts.
+type CommandKind string
+
+const (
+	KindDefault CommandKind = "default"
+	KindCustom  CommandKind = "custom"
 )
 
 // Command is the interface that all agent commands must implement.
@@ -11,30 +22,93 @@ type Command interface {
 	Execute(ctx context.Context, payload map[string]any) error
 }
 
+// registryEntry holds a command handler together with its kind.
+type registryEntry struct {
+	cmd  Command
+	kind CommandKind
+}
+
+// CommandInfo is returned by ListCommands so callers know both name and kind.
+type CommandInfo struct {
+	Name string
+	Kind CommandKind
+}
+
 // Registry maps job types to their command handlers.
 type Registry struct {
-	handlers map[string]Command
+	entries map[string]registryEntry
 }
 
 // NewRegistry creates a new command registry.
 func NewRegistry() *Registry {
 	return &Registry{
-		handlers: make(map[string]Command),
+		entries: make(map[string]registryEntry),
 	}
 }
 
-// Register adds a command handler for the given job type.
+// Register adds a built-in (default) command handler.
 func (r *Registry) Register(jobType string, cmd Command) {
-	r.handlers[jobType] = cmd
+	r.entries[jobType] = registryEntry{cmd: cmd, kind: KindDefault}
+}
+
+// RegisterCustom adds a custom-script command handler.
+func (r *Registry) RegisterCustom(jobType string, cmd Command) {
+	r.entries[jobType] = registryEntry{cmd: cmd, kind: KindCustom}
+}
+
+// ExecuteResult holds the output and error from a command execution.
+type ExecuteResult struct {
+	Output string
+	Err    error
 }
 
 // Execute finds and executes the command for the given job type.
-func (r *Registry) Execute(ctx context.Context, jobType string, payload map[string]any) error {
-	cmd, ok := r.handlers[jobType]
+// For CustomScriptCommands it captures the output; for built-ins output is "".
+// If the command is not in the registry, it falls back to looking for a
+// matching .sh script on disk (handles scripts created after agent startup).
+func (r *Registry) Execute(ctx context.Context, jobType string, payload map[string]any) ExecuteResult {
+	entry, ok := r.entries[jobType]
 	if !ok {
-		return fmt.Errorf("unknown command type: %s", jobType)
+		// Fallback: look for a custom script on disk
+		return r.execFromDisk(ctx, jobType)
 	}
-	return cmd.Execute(ctx, payload)
+
+	if custom, ok := entry.cmd.(*CustomScriptCommand); ok {
+		output, err := custom.ExecuteWithOutput(ctx)
+		return ExecuteResult{Output: output, Err: err}
+	}
+
+	err := entry.cmd.Execute(ctx, payload)
+	return ExecuteResult{Err: err}
+}
+
+// customScriptPath returns the canonical path for a named custom script.
+func customScriptPath(name string) string {
+	return filepath.Join(domain.CustomCommandsDir, name+".sh")
+}
+
+// execFromDisk tries to find and run a custom script at the expected path.
+// This handles commands that were registered after the agent started.
+func (r *Registry) execFromDisk(ctx context.Context, name string) ExecuteResult {
+	scriptPath := customScriptPath(name)
+	cmd := &CustomScriptCommand{ScriptPath: scriptPath}
+	output, err := cmd.ExecuteWithOutput(ctx)
+	if err != nil {
+		// If the script simply doesn't exist, give a clearer error
+		return ExecuteResult{Output: output, Err: fmt.Errorf("command %q not found (looked for %s): %w", name, scriptPath, err)}
+	}
+	// Also register it so future invocations are faster
+	r.RegisterCustom(name, cmd)
+	return ExecuteResult{Output: output}
+}
+
+// ListCommands returns all registered command names with their kind.
+func (r *Registry) ListCommands() []CommandInfo {
+	out := make([]CommandInfo, 0, len(r.entries))
+	for name, e := range r.entries {
+		out = append(out, CommandInfo{Name: name, Kind: e.kind})
+	}
+	return out
 }
 
 // RegisterAll registers all built-in commands in the registry.

@@ -7,18 +7,19 @@ import (
 
 	"autohost-agent/internal/api"
 	"autohost-agent/internal/commands"
+	"autohost-agent/internal/domain"
 	"autohost-agent/internal/services"
 	"autohost-agent/internal/transport"
 )
 
 // Agent is the top-level orchestrator that coordinates all subsystems:
-// heartbeats, metrics collection, WebSocket command reception, and job execution.
+// heartbeats, metrics collection, gRPC command reception, and job execution.
 type Agent struct {
 	cfg               *Config
 	apiClient         *api.Client
 	heartbeatService  *services.HeartbeatService
 	metricsService    *services.MetricsService
-	wsClient          *transport.WSClient
+	grpcClient        *transport.GRPCClient
 	registry          *commands.Registry
 	heartbeatInterval time.Duration
 	metricsInterval   time.Duration
@@ -32,15 +33,18 @@ func New(cfg *Config) *Agent {
 
 	registry := commands.NewRegistry()
 	commands.RegisterAll(registry)
+	if err := commands.RegisterCustomScripts(registry, domain.CustomCommandsDir); err != nil {
+		log.Printf("⚠️  could not load custom scripts: %v", err)
+	}
 
-	wsClient := transport.NewWSClient(cfg.WSURL, cfg.AgentToken, registry)
+	grpcClient := transport.NewGRPCClient(cfg.GRPCAddress, cfg.AgentToken, cfg.NodeID, registry)
 
 	return &Agent{
 		cfg:               cfg,
 		apiClient:         apiClient,
 		heartbeatService:  heartbeatService,
 		metricsService:    metricsService,
-		wsClient:          wsClient,
+		grpcClient:        grpcClient,
 		registry:          registry,
 		heartbeatInterval: 15 * time.Second,
 		metricsInterval:   15 * time.Second,
@@ -64,10 +68,10 @@ func (a *Agent) Run(ctx context.Context) error {
 		log.Println("Initial metrics sent successfully")
 	}
 
-	// Connect WebSocket for job reception.
+	// Connect via gRPC for job reception.
 	go func() {
-		if err := a.wsClient.Connect(ctx); err != nil {
-			log.Printf("WebSocket connection ended: %v", err)
+		if err := a.grpcClient.Run(ctx); err != nil {
+			log.Printf("gRPC client stopped: %v", err)
 		}
 	}()
 
@@ -75,7 +79,6 @@ func (a *Agent) Run(ctx context.Context) error {
 	metricsTicker := time.NewTicker(a.metricsInterval)
 	defer heartbeatTicker.Stop()
 	defer metricsTicker.Stop()
-	defer a.wsClient.Close()
 
 	for {
 		select {

@@ -5,10 +5,16 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=root
+
+# Run as dedicated system user
+User=autohost
+Group=autohost
+
 ExecStart=/usr/local/bin/autohost-agent /etc/autohost/config.yaml
+
 Restart=always
 RestartSec=10
+
 StandardOutput=journal
 StandardError=journal
 
@@ -17,6 +23,17 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
+
+# Allow persistent state storage
+StateDirectory=autohost
+
+# Optional but recommended
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictRealtime=true
 
 [Install]
 WantedBy=multi-user.target
