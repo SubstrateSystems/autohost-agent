@@ -1,4 +1,4 @@
-.PHONY: build clean install uninstall run test deploy-vm vm-start vm-stop vm-status vm-logs vm-shell deploy-incus incus-start incus-stop incus-status incus-logs incus-shell
+.PHONY: build clean install uninstall run test release deploy-vm vm-start vm-stop vm-status vm-logs vm-shell deploy-incus incus-start incus-stop incus-status incus-logs incus-shell
 
 BINARY_NAME=autohost-agent
 INSTALL_PATH=/usr/local/bin
@@ -7,10 +7,28 @@ SERVICE_PATH=/etc/systemd/system
 VM_NAME=autohost-test
 INCUS_INSTANCE=autohost-test
 
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+LDFLAGS  = -s -w -X main.Version=$(VERSION)
+PLATFORMS = linux/amd64 linux/arm64
+
 build:
-	@echo "Building $(BINARY_NAME)..."
-	go build -o $(BINARY_NAME) cmd/agent/main.go
+	@echo "Building $(BINARY_NAME) $(VERSION)..."
+	go build -ldflags "$(LDFLAGS)" -o $(BINARY_NAME) cmd/agent/main.go
 	@echo "Build complete: ./$(BINARY_NAME)"
+
+release:
+	@echo "🚀 Building release $(VERSION) for: $(PLATFORMS)"
+	@mkdir -p dist
+	@for platform in $(PLATFORMS); do \
+		GOOS=$${platform%/*} GOARCH=$${platform#*/}; \
+		out="dist/$(BINARY_NAME)-$${GOOS}-$${GOARCH}"; \
+		echo "  → $${out}"; \
+		GOOS=$$GOOS GOARCH=$$GOARCH go build -ldflags "$(LDFLAGS)" -o "$$out" cmd/agent/main.go; \
+	done
+	@echo "🔐 Generating checksums..."
+	@cd dist && sha256sum $(BINARY_NAME)-* > checksums_$(VERSION).txt
+	@echo "✅ Release artifacts in dist/"
+	@ls -lh dist/
 
 clean:
 	@echo "Cleaning..."

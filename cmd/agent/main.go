@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -11,6 +12,9 @@ import (
 	"autohost-agent/pkg/dir"
 )
 
+// Version se inyecta en build time con -ldflags "-X main.Version=vX.Y.Z"
+var Version = "dev"
+
 func main() {
 	if err := ensureAutohostDirs(); err != nil {
 		log.Fatalf("creating autohost dirs: %v", err)
@@ -18,8 +22,14 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	if len(os.Args) < 2 {
-		log.Fatal("usage: autohost-agent <config-path>")
+		log.Fatal("usage: autohost-agent <config-path>\n       autohost-agent --version")
 	}
+
+	if os.Args[1] == "--version" || os.Args[1] == "-v" {
+		fmt.Printf("autohost-agent %s\n", Version)
+		os.Exit(0)
+	}
+
 	cfgPath := os.Args[1]
 
 	log.Printf("Loading configuration from: %s", cfgPath)

@@ -1,69 +1,392 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# ==============================================================================
+#  Autohost Agent — Installer & Auto-configurator
+#  Uso:
+#    curl -fsSL https://raw.githubusercontent.com/mazapanuwu13/autohost-agent/main/scripts/install.sh | bash
+#
+#  Variables de entorno opcionales para instalación no-interactiva:
+#    AUTOHOST_API_URL   — URL de la API  (ej: https://cloud.autohost.dev)
+#    AUTOHOST_TOKEN     — Token de enrolamiento del agente
+#    AUTOHOST_NODE_ID   — ID del nodo (default: hostname)
+#    AUTOHOST_TAGS      — Tags separados por coma (ej: "production,web")
+#    VERSION            — Versión específica (ej: v0.2.0)
+#    BIN_DIR            — Directorio de instalación del binario (default: /usr/local/bin)
+# ==============================================================================
+set -euo pipefail
 
-# Autohost Agent Installation Script
-# This script installs the autohost-agent as a systemd service
+REPO="mazapanuwu13/autohost-agent"
+BIN_NAME="autohost-agent"
+SERVICE_NAME="autohost-agent"
+CONFIG_DIR="/etc/autohost"
+CONFIG_FILE="${CONFIG_DIR}/config.yaml"
+SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+AGENT_USER="autohost"
 
-set -e
+VERSION="${VERSION:-}"
+BIN_DIR="${BIN_DIR:-/usr/local/bin}"
 
-BINARY_NAME="autohost-agent"
-INSTALL_PATH="/usr/local/bin"
-CONFIG_PATH="/etc/autohost"
-SERVICE_PATH="/etc/systemd/system"
+# ──────────────────────────────────────────────
+# Helpers
+# ──────────────────────────────────────────────
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
+log_info()  { echo -e "${CYAN}ℹ️  $*${NC}"; }
+log_ok()    { echo -e "${GREEN}✅ $*${NC}"; }
+log_warn()  { echo -e "${YELLOW}⚠️  $*${NC}"; }
+log_error() { echo -e "${RED}❌ $*${NC}" >&2; }
 
-# Check if running as root
-if [ "$EUID" -ne 0 ]; then 
-    echo "Please run as root or with sudo"
-    exit 1
-fi
-
-echo "Installing Autohost Agent..."
-
-# Create directories
-mkdir -p "$CONFIG_PATH"
-
-# Copy binary
-if [ -f "$BINARY_NAME" ]; then
-    cp "$BINARY_NAME" "$INSTALL_PATH/"
-    chmod +x "$INSTALL_PATH/$BINARY_NAME"
-    echo "✓ Binary installed to $INSTALL_PATH/$BINARY_NAME"
-else
-    echo "Error: Binary not found. Please run 'make build' first."
-    exit 1
-fi
-
-# Copy service file
-if [ -f "autohost-agent.service" ]; then
-    cp autohost-agent.service "$SERVICE_PATH/"
-    echo "✓ Service file installed"
-else
-    echo "Warning: Service file not found"
-fi
-
-# Copy config if it doesn't exist
-if [ ! -f "$CONFIG_PATH/config.yaml" ]; then
-    if [ -f "configs/agent.yaml" ]; then
-        cp configs/agent.yaml "$CONFIG_PATH/config.yaml"
-        chmod 600 "$CONFIG_PATH/config.yaml"
-        echo "✓ Config file created at $CONFIG_PATH/config.yaml"
-        echo ""
-        echo "IMPORTANT: Edit $CONFIG_PATH/config.yaml with your settings before starting the agent"
+require_root() {
+  if [ "$(id -u)" -ne 0 ]; then
+    if command -v sudo >/dev/null 2>&1; then
+      SUDO="sudo"
     else
-        echo "Warning: Example config not found"
+      log_error "Se requieren privilegios de root. Instala sudo o ejecuta como root."
+      exit 1
     fi
-else
-    echo "✓ Config file already exists at $CONFIG_PATH/config.yaml"
+  else
+    SUDO=""
+  fi
+}
+
+# ──────────────────────────────────────────────
+# Detección de OS / ARCH
+# ──────────────────────────────────────────────
+OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+ARCH_RAW="$(uname -m)"
+case "$ARCH_RAW" in
+  x86_64|amd64)   ARCH="amd64" ;;
+  aarch64|arm64)  ARCH="arm64" ;;
+  *) log_error "Arquitectura no soportada: $ARCH_RAW"; exit 1 ;;
+esac
+
+if [ "$OS" != "linux" ]; then
+  log_error "El agente solo soporta Linux."
+  exit 1
 fi
 
-# Reload systemd
-systemctl daemon-reload
-echo "✓ Systemd reloaded"
+TMP_DIR="$(mktemp -d)"
+cleanup() { rm -rf "$TMP_DIR"; }
+trap cleanup EXIT
 
+ua() { echo "autohost-agent-installer/1.0 (+https://github.com/${REPO})"; }
+
+sha256_cmd() {
+  if command -v sha256sum >/dev/null 2>&1; then echo "sha256sum";
+  elif command -v shasum >/dev/null 2>&1; then echo "shasum -a 256";
+  else echo ""; fi
+}
+
+# ──────────────────────────────────────────────
+# Descarga de release
+# ──────────────────────────────────────────────
+fetch_latest_tag() {
+  curl -fsSL -H "User-Agent: $(ua)" \
+    "https://api.github.com/repos/${REPO}/releases/latest" \
+    | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1
+}
+
+download_release() {
+  local tag="$1"
+  local asset="${BIN_NAME}-${OS}-${ARCH}"
+  local url_bin="https://github.com/${REPO}/releases/download/${tag}/${asset}"
+  local url_sum="https://github.com/${REPO}/releases/download/${tag}/checksums_${tag}.txt"
+
+  log_info "Descargando binario: $url_bin"
+  curl -fLsS -H "User-Agent: $(ua)" -o "${TMP_DIR}/${BIN_NAME}" "$url_bin"
+
+  log_info "Descargando checksums: $url_sum"
+  curl -fLsS -H "User-Agent: $(ua)" -o "${TMP_DIR}/checksums.txt" "$url_sum" || {
+    log_warn "No se encontró archivo de checksums (continuando sin verificación)."
+    return 0
+  }
+
+  local shacmd
+  shacmd="$(sha256_cmd)"
+  if [ -n "$shacmd" ]; then
+    log_info "Verificando checksum..."
+    (
+      cd "$TMP_DIR"
+      expected="$(grep -E "[[:space:]]${asset}$" checksums.txt | awk '{print $1}' || true)"
+      if [ -z "${expected}" ]; then
+        log_warn "No se encontró checksum para ${asset} (continuando)."
+      else
+        actual="$($shacmd "${BIN_NAME}" | awk '{print $1}')"
+        if [ "$expected" != "$actual" ]; then
+          log_error "Checksum inválido. Esperado: ${expected}  Actual: ${actual}"
+          exit 1
+        fi
+        log_ok "Checksum verificado."
+      fi
+    )
+  fi
+}
+
+install_from_release() {
+  local tag
+  if [ -n "${VERSION}" ]; then
+    tag="${VERSION}"
+  else
+    log_info "Obteniendo última versión..."
+    tag="$(fetch_latest_tag || true)"
+    if [ -z "${tag:-}" ]; then
+      log_warn "No hay releases publicados o la API no respondió."
+      return 1
+    fi
+  fi
+  log_info "Versión a instalar: ${tag}"
+  download_release "${tag}"
+  chmod +x "${TMP_DIR}/${BIN_NAME}"
+  $SUDO mv "${TMP_DIR}/${BIN_NAME}" "${BIN_DIR}/${BIN_NAME}"
+  log_ok "Binario instalado en ${BIN_DIR}/${BIN_NAME}"
+}
+
+install_from_source() {
+  log_info "Compilando desde código fuente..."
+  if ! command -v go >/dev/null 2>&1; then
+    log_error "Necesitas Go instalado para compilar desde fuente."
+    exit 1
+  fi
+  local tmp_src="${TMP_DIR}/src"
+  mkdir -p "$tmp_src"
+  if command -v git >/dev/null 2>&1; then
+    git clone --depth=1 "https://github.com/${REPO}.git" "$tmp_src"
+  else
+    log_error "git no encontrado, no se puede compilar desde fuente."
+    exit 1
+  fi
+  (
+    cd "$tmp_src"
+    local ver="${VERSION:-dev}"
+    go build -ldflags "-s -w -X main.Version=${ver}" -o "${TMP_DIR}/${BIN_NAME}" cmd/agent/main.go
+  )
+  chmod +x "${TMP_DIR}/${BIN_NAME}"
+  $SUDO mv "${TMP_DIR}/${BIN_NAME}" "${BIN_DIR}/${BIN_NAME}"
+  log_ok "Binario compilado e instalado en ${BIN_DIR}/${BIN_NAME}"
+}
+
+# ──────────────────────────────────────────────
+# Recopilación de configuración
+# ──────────────────────────────────────────────
+prompt_or_env() {
+  local var_name="$1"
+  local prompt_text="$2"
+  local default_val="${3:-}"
+  local current="${!var_name:-}"
+
+  if [ -n "$current" ]; then
+    if echo "$var_name" | grep -qi "token"; then
+      log_info "${var_name} = [REDACTED]  (de variable de entorno)"
+    else
+      log_info "${var_name} = ${current}  (de variable de entorno)"
+    fi
+    return
+  fi
+
+  if [ -n "$default_val" ]; then
+    read -rp "  ${prompt_text} [${default_val}]: " input
+    eval "${var_name}=\"${input:-$default_val}\""
+  else
+    while true; do
+      read -rp "  ${prompt_text}: " input
+      if [ -n "$input" ]; then
+        eval "${var_name}=\"$input\""
+        break
+      fi
+      log_warn "Este campo es obligatorio."
+    done
+  fi
+}
+
+collect_config() {
+  echo ""
+  echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo -e "${CYAN}  Configuración del Autohost Agent${NC}"
+  echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo ""
+
+  prompt_or_env "AUTOHOST_API_URL"  "URL de la API (ej: https://cloud.autohost.dev)" ""
+  prompt_or_env "AUTOHOST_TOKEN"    "Token de enrolamiento del nodo"                 ""
+  prompt_or_env "AUTOHOST_NODE_ID"  "ID del nodo"                                    "$(hostname)"
+
+  local default_tags=""
+  prompt_or_env "AUTOHOST_TAGS"     "Tags del nodo, separados por coma (opcional)"   "$default_tags"
+
+  # Derivar ws_url y grpc_address desde api_url
+  local base_url="${AUTOHOST_API_URL}"
+  WS_URL="${base_url/https:\/\//wss://}"
+  WS_URL="${WS_URL/http:\/\//ws://}"
+  WS_URL="${WS_URL%/}/ws"
+
+  # gRPC: mismo host, puerto 9090
+  GRPC_HOST="$(echo "$base_url" | sed -E 's|https?://([^/:]+).*|\1|')"
+  GRPC_ADDRESS="${GRPC_HOST}:9090"
+
+  echo ""
+  log_info "Resumen de configuración:"
+  echo "   api_url:       ${AUTOHOST_API_URL}"
+  echo "   ws_url:        ${WS_URL}"
+  echo "   grpc_address:  ${GRPC_ADDRESS}"
+  echo "   node_id:       ${AUTOHOST_NODE_ID}"
+  echo "   tags:          ${AUTOHOST_TAGS:-<ninguno>}"
+  echo ""
+}
+
+# ──────────────────────────────────────────────
+# Creación de usuario del sistema
+# ──────────────────────────────────────────────
+create_system_user() {
+  if id -u "$AGENT_USER" >/dev/null 2>&1; then
+    log_info "Usuario del sistema '${AGENT_USER}' ya existe."
+    return
+  fi
+  log_info "Creando usuario del sistema '${AGENT_USER}'..."
+  $SUDO useradd \
+    --system \
+    --no-create-home \
+    --shell /usr/sbin/nologin \
+    --comment "Autohost Agent" \
+    "$AGENT_USER"
+  log_ok "Usuario '${AGENT_USER}' creado."
+}
+
+# ──────────────────────────────────────────────
+# Creación del config.yaml
+# ──────────────────────────────────────────────
+write_config() {
+  log_info "Creando configuración en ${CONFIG_FILE}..."
+  $SUDO mkdir -p "$CONFIG_DIR"
+
+  # Construir bloque de tags YAML
+  local tags_yaml=""
+  if [ -n "${AUTOHOST_TAGS:-}" ]; then
+    IFS=',' read -ra tag_arr <<< "$AUTOHOST_TAGS"
+    for t in "${tag_arr[@]}"; do
+      t="$(echo "$t" | xargs)"  # trim spaces
+      tags_yaml="${tags_yaml}  - \"${t}\"\n"
+    done
+  fi
+
+  $SUDO tee "$CONFIG_FILE" > /dev/null <<EOF
+# Autohost Agent — Configuración generada por el instalador
+# Generado: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+api_url:      "${AUTOHOST_API_URL}"
+ws_url:       "${WS_URL}"
+grpc_address: "${GRPC_ADDRESS}"
+agent_token:  "${AUTOHOST_TOKEN}"
+node_id:      "${AUTOHOST_NODE_ID}"
+tags:
+$(printf '%b' "${tags_yaml:-  []\n}")
+EOF
+
+  $SUDO chown "root:${AGENT_USER}" "$CONFIG_FILE"
+  $SUDO chmod 640 "$CONFIG_FILE"
+  log_ok "Configuración escrita en ${CONFIG_FILE}"
+}
+
+# ──────────────────────────────────────────────
+# Instalación del servicio systemd
+# ──────────────────────────────────────────────
+install_service() {
+  log_info "Instalando servicio systemd en ${SERVICE_FILE}..."
+  $SUDO tee "$SERVICE_FILE" > /dev/null <<EOF
+[Unit]
+Description=Autohost Monitoring Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${AGENT_USER}
+Group=${AGENT_USER}
+ExecStart=${BIN_DIR}/${BIN_NAME} ${CONFIG_FILE}
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+StateDirectory=autohost
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  $SUDO systemctl daemon-reload
+  log_ok "Servicio instalado."
+}
+
+# ──────────────────────────────────────────────
+# Enable + start
+# ──────────────────────────────────────────────
+enable_service() {
+  log_info "Habilitando y arrancando ${SERVICE_NAME}..."
+  $SUDO systemctl enable "$SERVICE_NAME"
+  $SUDO systemctl restart "$SERVICE_NAME"
+  sleep 2
+
+  if $SUDO systemctl is-active --quiet "$SERVICE_NAME"; then
+    log_ok "Servicio '${SERVICE_NAME}' activo y corriendo."
+  else
+    log_warn "El servicio no arrancó correctamente. Revisa los logs:"
+    echo "   journalctl -u ${SERVICE_NAME} -n 20 --no-pager"
+  fi
+}
+
+# ──────────────────────────────────────────────
+# MAIN
+# ──────────────────────────────────────────────
 echo ""
-echo "Installation complete!"
+echo -e "${CYAN}╔══════════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}║      Autohost Agent — Instalador             ║${NC}"
+echo -e "${CYAN}╚══════════════════════════════════════════════╝${NC}"
+
+require_root
+
+# 1. Descargar binario
 echo ""
-echo "Next steps:"
-echo "  1. Edit the configuration: sudo nano $CONFIG_PATH/config.yaml"
-echo "  2. Enable the service: sudo systemctl enable $BINARY_NAME"
-echo "  3. Start the service: sudo systemctl start $BINARY_NAME"
-echo "  4. Check status: sudo systemctl status $BINARY_NAME"
+log_info "Paso 1/5: Descargando binario..."
+if ! install_from_release; then
+  log_warn "No se pudo descargar release. Compilando desde fuente..."
+  install_from_source
+fi
+
+# 2. Recopilar configuración
+echo ""
+log_info "Paso 2/5: Configuración del agente..."
+collect_config
+
+# 3. Crear usuario de sistema
+echo ""
+log_info "Paso 3/5: Creando usuario del sistema..."
+create_system_user
+
+# 4. Escribir config + servicio
+echo ""
+log_info "Paso 4/5: Instalando archivos de configuración y servicio..."
+write_config
+install_service
+
+# 5. Activar servicio
+echo ""
+log_info "Paso 5/5: Activando servicio..."
+enable_service
+
+# ──────────────────────────────────────────────
+# Resumen final
+# ──────────────────────────────────────────────
+echo ""
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${GREEN}  ✅ Instalación completada${NC}"
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+echo "  Binario:       ${BIN_DIR}/${BIN_NAME}"
+echo "  Configuración: ${CONFIG_FILE}"
+echo "  Servicio:      ${SERVICE_FILE}"
+echo ""
+echo "  Comandos útiles:"
+echo "    systemctl status ${SERVICE_NAME}"
+echo "    journalctl -u ${SERVICE_NAME} -f"
+echo "    systemctl restart ${SERVICE_NAME}"
 echo ""
