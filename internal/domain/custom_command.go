@@ -6,7 +6,7 @@ import (
 )
 
 // CustomCommandsDir is the default directory where custom command scripts are stored.
-const CustomCommandsDir = "/etc/autohost/commands"
+const CustomCommandsDir = "/var/lib/autohost/commands"
 
 // ScriptName represents the filename of a custom command script.
 type ScriptName string
