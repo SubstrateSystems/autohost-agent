@@ -12,8 +12,12 @@ import (
 	"autohost-agent/pkg/dir"
 )
 
-// Version se inyecta en build time con -ldflags "-X main.Version=vX.Y.Z"
-var Version = "dev"
+// Inyectado en build time por goreleaser
+var (
+	Version = "dev"
+	Commit  = "none"
+	Date    = "unknown"
+)
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
