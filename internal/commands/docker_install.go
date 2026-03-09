@@ -1,0 +1,16 @@
+package commands
+
+import (
+	"context"
+	"log"
+
+	"autohost-agent/internal/infra/docker"
+)
+
+// DockerInstall installs Docker on the host system.
+type DockerInstall struct{}
+
+func (c *DockerInstall) Execute(_ context.Context, _ map[string]any) error {
+	log.Println("Installing Docker...")
+	return docker.Install()
+}
