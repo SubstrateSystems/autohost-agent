@@ -58,67 +58,61 @@ autohost-agent/
 
 ## Configuración
 
-1. Copia el archivo de configuración de ejemplo:
+## Instalación
+
+### Instalador automático (recomendado)
+
+Un solo comando: descarga el binario, crea el usuario de sistema, genera `/etc/autohost/config.yaml` y registra el servicio systemd:
+
 ```bash
-cp configs/agent.yaml /etc/autohost/config.yaml
+curl -fsSL https://raw.githubusercontent.com/SubstrateSystems/autohost-agent/main/scripts/install.sh | bash
 ```
 
-2. Edita el archivo de configuración con tus valores:
-```yaml
-api_url: "https://api.tudominio.com"
-agent_token: "tu-token-api"
-node_id: "nombre-unico-del-nodo"
-tags:
-  - "etiqueta1"
-  - "etiqueta2"
+El instalador te pedirá de forma interactiva:
+- URL de la API (`AUTOHOST_API_URL`)
+- Token de enrolamiento (`AUTOHOST_TOKEN`)
+- ID del nodo (por defecto: `hostname`)
+- Tags opcionales
+
+### Instalación no-interactiva (CI / automatización)
+
+```bash
+AUTOHOST_API_URL=https://cloud.autohost.dev \
+AUTOHOST_TOKEN=autohost-node_xxxx \
+AUTOHOST_NODE_ID=mi-servidor \
+AUTOHOST_TAGS="production,web" \
+bash <(curl -fsSL https://raw.githubusercontent.com/SubstrateSystems/autohost-agent/main/scripts/install.sh)
 ```
 
-## Compilación
+### Versión específica
+
+```bash
+VERSION=v0.2.0 curl -fsSL https://raw.githubusercontent.com/SubstrateSystems/autohost-agent/main/scripts/install.sh | bash
+```
+
+### Verificar instalación
+
+```bash
+autohost-agent --version
+systemctl status autohost-agent
+```
+
+### Compilación desde fuente
 
 ```bash
 make build
-# o directamente:
-go build -o autohost-agent cmd/agent/main.go
+# o con versión explícita:
+make build VERSION=v0.2.0
 ```
 
-## Ejecución
-
-### Modo manual (desarrollo)
+### Ejecución manual (desarrollo)
 ```bash
 ./autohost-agent /etc/autohost/config.yaml
 ```
 
-### Como servicio systemd (producción)
-
-#### Opción 1: Usar el script de instalación
+### Logs
 ```bash
-make build
-sudo ./scripts/install.sh
-```
-
-#### Opción 2: Instalación manual
-
-1. Copia el binario:
-```bash
-sudo cp autohost-agent /usr/local/bin/
-```
-
-2. Copia el archivo de servicio:
-```bash
-sudo cp autohost-agent.service /etc/systemd/system/
-```
-
-3. Habilita e inicia el servicio:
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable autohost-agent
-sudo systemctl start autohost-agent
-```
-
-4. Verifica el estado:
-```bash
-sudo systemctl status autohost-agent
-sudo journalctl -u autohost-agent -f
+journalctl -u autohost-agent -f
 ```
 
 ## Makefile
