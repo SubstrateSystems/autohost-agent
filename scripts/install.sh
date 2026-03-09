@@ -14,7 +14,7 @@
 # ==============================================================================
 set -euo pipefail
 
-REPO="mazapanuwu13/autohost-agent"
+REPO="SubstrateSystems/autohost-agent"
 BIN_NAME="autohost-agent"
 SERVICE_NAME="autohost-agent"
 CONFIG_DIR="/etc/autohost"
