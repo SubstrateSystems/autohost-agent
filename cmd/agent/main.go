@@ -16,9 +16,6 @@ import (
 var Version = "dev"
 
 func main() {
-	if err := ensureAutohostDirs(); err != nil {
-		log.Fatalf("creating autohost dirs: %v", err)
-	}
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	if len(os.Args) < 2 {
@@ -28,6 +25,10 @@ func main() {
 	if os.Args[1] == "--version" || os.Args[1] == "-v" {
 		fmt.Printf("autohost-agent %s\n", Version)
 		os.Exit(0)
+	}
+
+	if err := ensureAutohostDirs(); err != nil {
+		log.Fatalf("creating autohost dirs: %v", err)
 	}
 
 	cfgPath := os.Args[1]
