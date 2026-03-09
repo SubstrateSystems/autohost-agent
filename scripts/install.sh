@@ -181,12 +181,20 @@ prompt_or_env() {
     return
   fi
 
+  # Cuando se ejecuta via `curl | bash`, stdin NO es la terminal.
+  # Redirigir read a /dev/tty para leer del usuario real.
+  if [ ! -t 0 ] && [ ! -e /dev/tty ]; then
+    log_error "Modo no-interactivo sin /dev/tty. Usa variables de entorno:"
+    log_error "  AUTOHOST_API_URL, AUTOHOST_TOKEN, AUTOHOST_NODE_ID, AUTOHOST_TAGS"
+    exit 1
+  fi
+
   if [ -n "$default_val" ]; then
-    read -rp "  ${prompt_text} [${default_val}]: " input
+    read -rp "  ${prompt_text} [${default_val}]: " input </dev/tty
     eval "${var_name}=\"${input:-$default_val}\""
   else
     while true; do
-      read -rp "  ${prompt_text}: " input
+      read -rp "  ${prompt_text}: " input </dev/tty
       if [ -n "$input" ]; then
         eval "${var_name}=\"$input\""
         break
