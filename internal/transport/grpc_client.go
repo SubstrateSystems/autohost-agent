@@ -1,11 +1,15 @@
 package transport
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"log"
+	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -24,6 +28,9 @@ type GRPCClient struct {
 	token    string
 	nodeID   string
 	registry *commands.Registry
+
+	logMu     sync.Mutex
+	logCancel context.CancelFunc // non-nil while log streaming is active
 }
 
 // NewGRPCClient creates a new GRPCClient.
@@ -156,6 +163,10 @@ func (c *GRPCClient) connectStream(ctx context.Context, client pb.NodeAgentServi
 		switch p := msg.GetPayload().(type) {
 		case *pb.ServerMessage_ExecuteJob:
 			go c.handleJob(ctx, p.ExecuteJob, results)
+		case *pb.ServerMessage_StreamLogs:
+			c.startLogStream(ctx, p.StreamLogs, results)
+		case *pb.ServerMessage_StopLogs:
+			c.stopLogStream()
 		default:
 			log.Printf("gRPC: unknown ServerMessage payload type %T", p)
 		}
@@ -197,4 +208,152 @@ func (c *GRPCClient) handleJob(ctx context.Context, job *pb.ExecuteJobPayload, r
 	default:
 		log.Printf("⚠️  gRPC: result buffer full, dropping result for job %s", job.GetJobId())
 	}
+}
+
+// ─── Log streaming ────────────────────────────────────────────────────────────
+
+// startLogStream launches a goroutine that tails journalctl and sends each
+// line as a LogEntryPayload through the results channel.
+func (c *GRPCClient) startLogStream(ctx context.Context, req *pb.StreamLogsPayload, results chan<- *pb.NodeMessage) {
+	c.stopLogStream() // cancel any previous stream
+
+	logCtx, cancel := context.WithCancel(ctx)
+
+	c.logMu.Lock()
+	c.logCancel = cancel
+	c.logMu.Unlock()
+
+	go func() {
+		defer cancel()
+
+		unit := req.GetUnit()
+		histLines := req.GetLines()
+
+		sendMsg := func(u, msg string) {
+			select {
+			case results <- &pb.NodeMessage{
+				Payload: &pb.NodeMessage_LogEntry{LogEntry: &pb.LogEntryPayload{
+					TimestampUs: time.Now().UnixMicro(),
+					Unit:        u,
+					Message:     msg,
+				}},
+			}:
+			case <-logCtx.Done():
+			}
+		}
+
+		// firstRun controls tail lines: show history on first launch, skip on retries.
+		firstRun := true
+		for {
+			if logCtx.Err() != nil {
+				return
+			}
+
+			args := []string{"-f", "--output=short-iso", "--no-pager"}
+			if firstRun && histLines > 0 {
+				args = append(args, "-n", fmt.Sprintf("%d", histLines))
+			} else {
+				args = append(args, "-n", "0")
+			}
+			if unit != "" {
+				args = append(args, "-u", unit)
+			}
+
+			cmd := exec.CommandContext(logCtx, "journalctl", args...)
+			stdout, err := cmd.StdoutPipe()
+			if err != nil {
+				log.Printf("⚠️  journalctl pipe: %v", err)
+				sendMsg("agent", "⚠️ journalctl pipe error: "+err.Error())
+				return
+			}
+			var stderrBuf bytes.Buffer
+			cmd.Stderr = &stderrBuf
+
+			if err := cmd.Start(); err != nil {
+				log.Printf("⚠️  journalctl start: %v", err)
+				sendMsg("agent", "⚠️ journalctl start error: "+err.Error())
+				return
+			}
+			log.Printf("📋 log stream started (unit=%q lines=%d firstRun=%v)", unit, histLines, firstRun)
+			firstRun = false
+
+			scanner := bufio.NewScanner(stdout)
+			for scanner.Scan() {
+				line := scanner.Text()
+				if line == "" {
+					continue
+				}
+				u := unit
+				if u == "" {
+					u = extractUnit(line)
+				}
+				select {
+				case results <- &pb.NodeMessage{
+					Payload: &pb.NodeMessage_LogEntry{LogEntry: &pb.LogEntryPayload{
+						TimestampUs: time.Now().UnixMicro(),
+						Unit:        u,
+						Message:     line,
+					}},
+				}:
+				case <-logCtx.Done():
+					cmd.Process.Kill()
+					return
+				default:
+					// drop if the send buffer is full
+				}
+			}
+			cmd.Wait()
+
+			if errOut := strings.TrimSpace(stderrBuf.String()); errOut != "" {
+				log.Printf("⚠️  journalctl stderr: %s", errOut)
+				sendMsg("agent", "⚠️ journalctl: "+errOut)
+			}
+
+			// If context was cancelled (stream stopped intentionally), exit cleanly.
+			if logCtx.Err() != nil {
+				log.Printf("📋 log stream stopped (unit=%q)", unit)
+				return
+			}
+
+			// journalctl exited unexpectedly (e.g. journal not ready in container).
+			// Wait briefly and retry so the UI keeps receiving logs once available.
+			log.Printf("⚠️  journalctl exited unexpectedly (unit=%q), retrying in 3s…", unit)
+			sendMsg("agent", "⚠️ journalctl exited, retrying in 3s…")
+			select {
+			case <-logCtx.Done():
+				return
+			case <-time.After(3 * time.Second):
+			}
+		}
+	}()
+}
+
+// stopLogStream cancels the active journalctl goroutine (if any).
+func (c *GRPCClient) stopLogStream() {
+	c.logMu.Lock()
+	defer c.logMu.Unlock()
+	if c.logCancel != nil {
+		c.logCancel()
+		c.logCancel = nil
+	}
+}
+
+// extractUnit tries to parse the systemd unit name from a journalctl line.
+// journalctl --output=short-iso lines look like:
+//
+//	2026-03-09T12:00:00+0000 hostname unit[pid]: message
+func extractUnit(line string) string {
+	parts := strings.Fields(line)
+	if len(parts) >= 3 {
+		u := parts[2]
+		// Strip "[pid]:" suffix if present
+		if idx := strings.IndexByte(u, '['); idx > 0 {
+			return u[:idx]
+		}
+		if strings.HasSuffix(u, ":") {
+			return u[:len(u)-1]
+		}
+		return u
+	}
+	return ""
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"autohost-agent/internal/domain"
 )
@@ -69,6 +70,10 @@ type ExecuteResult struct {
 func (r *Registry) Execute(ctx context.Context, jobType string, payload map[string]any) ExecuteResult {
 	entry, ok := r.entries[jobType]
 	if !ok {
+		// container.* commands are handled by pattern — not in the registry.
+		if strings.HasPrefix(jobType, "container.") {
+			return execContainerCommand(ctx, jobType)
+		}
 		// Fallback: look for a custom script on disk
 		return r.execFromDisk(ctx, jobType)
 	}

@@ -7,12 +7,11 @@
 package nodepb
 
 import (
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
-
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const (
@@ -243,6 +242,7 @@ type NodeMessage struct {
 	//
 	//	*NodeMessage_JobResult
 	//	*NodeMessage_Heartbeat
+	//	*NodeMessage_LogEntry
 	Payload       isNodeMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -303,6 +303,15 @@ func (x *NodeMessage) GetHeartbeat() *HeartbeatPayload {
 	return nil
 }
 
+func (x *NodeMessage) GetLogEntry() *LogEntryPayload {
+	if x != nil {
+		if x, ok := x.Payload.(*NodeMessage_LogEntry); ok {
+			return x.LogEntry
+		}
+	}
+	return nil
+}
+
 type isNodeMessage_Payload interface {
 	isNodeMessage_Payload()
 }
@@ -315,15 +324,23 @@ type NodeMessage_Heartbeat struct {
 	Heartbeat *HeartbeatPayload `protobuf:"bytes,2,opt,name=heartbeat,proto3,oneof"`
 }
 
+type NodeMessage_LogEntry struct {
+	LogEntry *LogEntryPayload `protobuf:"bytes,3,opt,name=log_entry,json=logEntry,proto3,oneof"`
+}
+
 func (*NodeMessage_JobResult) isNodeMessage_Payload() {}
 
 func (*NodeMessage_Heartbeat) isNodeMessage_Payload() {}
+
+func (*NodeMessage_LogEntry) isNodeMessage_Payload() {}
 
 type ServerMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Payload:
 	//
 	//	*ServerMessage_ExecuteJob
+	//	*ServerMessage_StreamLogs
+	//	*ServerMessage_StopLogs
 	Payload       isServerMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -375,6 +392,24 @@ func (x *ServerMessage) GetExecuteJob() *ExecuteJobPayload {
 	return nil
 }
 
+func (x *ServerMessage) GetStreamLogs() *StreamLogsPayload {
+	if x != nil {
+		if x, ok := x.Payload.(*ServerMessage_StreamLogs); ok {
+			return x.StreamLogs
+		}
+	}
+	return nil
+}
+
+func (x *ServerMessage) GetStopLogs() *StopLogsPayload {
+	if x != nil {
+		if x, ok := x.Payload.(*ServerMessage_StopLogs); ok {
+			return x.StopLogs
+		}
+	}
+	return nil
+}
+
 type isServerMessage_Payload interface {
 	isServerMessage_Payload()
 }
@@ -383,7 +418,19 @@ type ServerMessage_ExecuteJob struct {
 	ExecuteJob *ExecuteJobPayload `protobuf:"bytes,1,opt,name=execute_job,json=executeJob,proto3,oneof"`
 }
 
+type ServerMessage_StreamLogs struct {
+	StreamLogs *StreamLogsPayload `protobuf:"bytes,2,opt,name=stream_logs,json=streamLogs,proto3,oneof"`
+}
+
+type ServerMessage_StopLogs struct {
+	StopLogs *StopLogsPayload `protobuf:"bytes,3,opt,name=stop_logs,json=stopLogs,proto3,oneof"`
+}
+
 func (*ServerMessage_ExecuteJob) isServerMessage_Payload() {}
+
+func (*ServerMessage_StreamLogs) isServerMessage_Payload() {}
+
+func (*ServerMessage_StopLogs) isServerMessage_Payload() {}
 
 type JobResultPayload struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -557,6 +604,157 @@ func (x *ExecuteJobPayload) GetCommandType() CommandType {
 	return CommandType_COMMAND_TYPE_DEFAULT
 }
 
+// Sent by server to ask the agent to start streaming logs.
+type StreamLogsPayload struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Unit          string                 `protobuf:"bytes,1,opt,name=unit,proto3" json:"unit,omitempty"`    // systemd unit name, e.g. "autohost-agent" or "" for all
+	Lines         int32                  `protobuf:"varint,2,opt,name=lines,proto3" json:"lines,omitempty"` // how many historical lines to tail first (0 = no history)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StreamLogsPayload) Reset() {
+	*x = StreamLogsPayload{}
+	mi := &file_node_agent_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamLogsPayload) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamLogsPayload) ProtoMessage() {}
+
+func (x *StreamLogsPayload) ProtoReflect() protoreflect.Message {
+	mi := &file_node_agent_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamLogsPayload.ProtoReflect.Descriptor instead.
+func (*StreamLogsPayload) Descriptor() ([]byte, []int) {
+	return file_node_agent_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *StreamLogsPayload) GetUnit() string {
+	if x != nil {
+		return x.Unit
+	}
+	return ""
+}
+
+func (x *StreamLogsPayload) GetLines() int32 {
+	if x != nil {
+		return x.Lines
+	}
+	return 0
+}
+
+// Sent by server to ask the agent to stop streaming logs.
+type StopLogsPayload struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StopLogsPayload) Reset() {
+	*x = StopLogsPayload{}
+	mi := &file_node_agent_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StopLogsPayload) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StopLogsPayload) ProtoMessage() {}
+
+func (x *StopLogsPayload) ProtoReflect() protoreflect.Message {
+	mi := &file_node_agent_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StopLogsPayload.ProtoReflect.Descriptor instead.
+func (*StopLogsPayload) Descriptor() ([]byte, []int) {
+	return file_node_agent_proto_rawDescGZIP(), []int{8}
+}
+
+// Sent by agent to the server, one per log line.
+type LogEntryPayload struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TimestampUs   int64                  `protobuf:"varint,1,opt,name=timestamp_us,json=timestampUs,proto3" json:"timestamp_us,omitempty"` // Unix microseconds
+	Unit          string                 `protobuf:"bytes,2,opt,name=unit,proto3" json:"unit,omitempty"`                                   // source systemd unit
+	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogEntryPayload) Reset() {
+	*x = LogEntryPayload{}
+	mi := &file_node_agent_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogEntryPayload) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogEntryPayload) ProtoMessage() {}
+
+func (x *LogEntryPayload) ProtoReflect() protoreflect.Message {
+	mi := &file_node_agent_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogEntryPayload.ProtoReflect.Descriptor instead.
+func (*LogEntryPayload) Descriptor() ([]byte, []int) {
+	return file_node_agent_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *LogEntryPayload) GetTimestampUs() int64 {
+	if x != nil {
+		return x.TimestampUs
+	}
+	return 0
+}
+
+func (x *LogEntryPayload) GetUnit() string {
+	if x != nil {
+		return x.Unit
+	}
+	return ""
+}
+
+func (x *LogEntryPayload) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
 var File_node_agent_proto protoreflect.FileDescriptor
 
 const file_node_agent_proto_rawDesc = "" +
@@ -572,15 +770,19 @@ const file_node_agent_proto_rawDesc = "" +
 	"\x18RegisterCommandsResponse\x12\x1e\n" +
 	"\n" +
 	"registered\x18\x01 \x01(\x05R\n" +
-	"registered\"\x9b\x01\n" +
+	"registered\"\xda\x01\n" +
 	"\vNodeMessage\x12@\n" +
 	"\n" +
 	"job_result\x18\x01 \x01(\v2\x1f.node_agent.v1.JobResultPayloadH\x00R\tjobResult\x12?\n" +
-	"\theartbeat\x18\x02 \x01(\v2\x1f.node_agent.v1.HeartbeatPayloadH\x00R\theartbeatB\t\n" +
-	"\apayload\"_\n" +
+	"\theartbeat\x18\x02 \x01(\v2\x1f.node_agent.v1.HeartbeatPayloadH\x00R\theartbeat\x12=\n" +
+	"\tlog_entry\x18\x03 \x01(\v2\x1e.node_agent.v1.LogEntryPayloadH\x00R\blogEntryB\t\n" +
+	"\apayload\"\xe3\x01\n" +
 	"\rServerMessage\x12C\n" +
 	"\vexecute_job\x18\x01 \x01(\v2 .node_agent.v1.ExecuteJobPayloadH\x00R\n" +
-	"executeJobB\t\n" +
+	"executeJob\x12C\n" +
+	"\vstream_logs\x18\x02 \x01(\v2 .node_agent.v1.StreamLogsPayloadH\x00R\n" +
+	"streamLogs\x12=\n" +
+	"\tstop_logs\x18\x03 \x01(\v2\x1e.node_agent.v1.StopLogsPayloadH\x00R\bstopLogsB\t\n" +
 	"\apayload\"\x89\x01\n" +
 	"\x10JobResultPayload\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x120\n" +
@@ -592,7 +794,15 @@ const file_node_agent_proto_rawDesc = "" +
 	"\x11ExecuteJobPayload\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12!\n" +
 	"\fcommand_name\x18\x02 \x01(\tR\vcommandName\x12=\n" +
-	"\fcommand_type\x18\x03 \x01(\x0e2\x1a.node_agent.v1.CommandTypeR\vcommandType*@\n" +
+	"\fcommand_type\x18\x03 \x01(\x0e2\x1a.node_agent.v1.CommandTypeR\vcommandType\"=\n" +
+	"\x11StreamLogsPayload\x12\x12\n" +
+	"\x04unit\x18\x01 \x01(\tR\x04unit\x12\x14\n" +
+	"\x05lines\x18\x02 \x01(\x05R\x05lines\"\x11\n" +
+	"\x0fStopLogsPayload\"b\n" +
+	"\x0fLogEntryPayload\x12!\n" +
+	"\ftimestamp_us\x18\x01 \x01(\x03R\vtimestampUs\x12\x12\n" +
+	"\x04unit\x18\x02 \x01(\tR\x04unit\x12\x18\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage*@\n" +
 	"\vCommandType\x12\x18\n" +
 	"\x14COMMAND_TYPE_DEFAULT\x10\x00\x12\x17\n" +
 	"\x13COMMAND_TYPE_CUSTOM\x10\x01*T\n" +
@@ -617,7 +827,7 @@ func file_node_agent_proto_rawDescGZIP() []byte {
 }
 
 var file_node_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_node_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_node_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_node_agent_proto_goTypes = []any{
 	(CommandType)(0),                 // 0: node_agent.v1.CommandType
 	(JobStatus)(0),                   // 1: node_agent.v1.JobStatus
@@ -628,23 +838,29 @@ var file_node_agent_proto_goTypes = []any{
 	(*JobResultPayload)(nil),         // 6: node_agent.v1.JobResultPayload
 	(*HeartbeatPayload)(nil),         // 7: node_agent.v1.HeartbeatPayload
 	(*ExecuteJobPayload)(nil),        // 8: node_agent.v1.ExecuteJobPayload
+	(*StreamLogsPayload)(nil),        // 9: node_agent.v1.StreamLogsPayload
+	(*StopLogsPayload)(nil),          // 10: node_agent.v1.StopLogsPayload
+	(*LogEntryPayload)(nil),          // 11: node_agent.v1.LogEntryPayload
 }
 var file_node_agent_proto_depIdxs = []int32{
-	0, // 0: node_agent.v1.RegisterCommandRequest.type:type_name -> node_agent.v1.CommandType
-	6, // 1: node_agent.v1.NodeMessage.job_result:type_name -> node_agent.v1.JobResultPayload
-	7, // 2: node_agent.v1.NodeMessage.heartbeat:type_name -> node_agent.v1.HeartbeatPayload
-	8, // 3: node_agent.v1.ServerMessage.execute_job:type_name -> node_agent.v1.ExecuteJobPayload
-	1, // 4: node_agent.v1.JobResultPayload.status:type_name -> node_agent.v1.JobStatus
-	0, // 5: node_agent.v1.ExecuteJobPayload.command_type:type_name -> node_agent.v1.CommandType
-	2, // 6: node_agent.v1.NodeAgentService.RegisterCommands:input_type -> node_agent.v1.RegisterCommandRequest
-	4, // 7: node_agent.v1.NodeAgentService.Connect:input_type -> node_agent.v1.NodeMessage
-	3, // 8: node_agent.v1.NodeAgentService.RegisterCommands:output_type -> node_agent.v1.RegisterCommandsResponse
-	5, // 9: node_agent.v1.NodeAgentService.Connect:output_type -> node_agent.v1.ServerMessage
-	8, // [8:10] is the sub-list for method output_type
-	6, // [6:8] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	0,  // 0: node_agent.v1.RegisterCommandRequest.type:type_name -> node_agent.v1.CommandType
+	6,  // 1: node_agent.v1.NodeMessage.job_result:type_name -> node_agent.v1.JobResultPayload
+	7,  // 2: node_agent.v1.NodeMessage.heartbeat:type_name -> node_agent.v1.HeartbeatPayload
+	11, // 3: node_agent.v1.NodeMessage.log_entry:type_name -> node_agent.v1.LogEntryPayload
+	8,  // 4: node_agent.v1.ServerMessage.execute_job:type_name -> node_agent.v1.ExecuteJobPayload
+	9,  // 5: node_agent.v1.ServerMessage.stream_logs:type_name -> node_agent.v1.StreamLogsPayload
+	10, // 6: node_agent.v1.ServerMessage.stop_logs:type_name -> node_agent.v1.StopLogsPayload
+	1,  // 7: node_agent.v1.JobResultPayload.status:type_name -> node_agent.v1.JobStatus
+	0,  // 8: node_agent.v1.ExecuteJobPayload.command_type:type_name -> node_agent.v1.CommandType
+	2,  // 9: node_agent.v1.NodeAgentService.RegisterCommands:input_type -> node_agent.v1.RegisterCommandRequest
+	4,  // 10: node_agent.v1.NodeAgentService.Connect:input_type -> node_agent.v1.NodeMessage
+	3,  // 11: node_agent.v1.NodeAgentService.RegisterCommands:output_type -> node_agent.v1.RegisterCommandsResponse
+	5,  // 12: node_agent.v1.NodeAgentService.Connect:output_type -> node_agent.v1.ServerMessage
+	11, // [11:13] is the sub-list for method output_type
+	9,  // [9:11] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_node_agent_proto_init() }
@@ -655,9 +871,12 @@ func file_node_agent_proto_init() {
 	file_node_agent_proto_msgTypes[2].OneofWrappers = []any{
 		(*NodeMessage_JobResult)(nil),
 		(*NodeMessage_Heartbeat)(nil),
+		(*NodeMessage_LogEntry)(nil),
 	}
 	file_node_agent_proto_msgTypes[3].OneofWrappers = []any{
 		(*ServerMessage_ExecuteJob)(nil),
+		(*ServerMessage_StreamLogs)(nil),
+		(*ServerMessage_StopLogs)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -665,7 +884,7 @@ func file_node_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_node_agent_proto_rawDesc), len(file_node_agent_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   7,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

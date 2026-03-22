@@ -169,6 +169,18 @@ deploy-incus: build
 	@echo "  2. Start service:  incus exec $(INCUS_INSTANCE) -- sudo systemctl start autohost-agent"
 	@echo "  3. Check status:   incus exec $(INCUS_INSTANCE) -- sudo systemctl status autohost-agent"
 
+deploy-incus-update: build
+	@echo "Updating Incus instance $(INCUS_INSTANCE)..."
+	@echo "1. Transferring new binary..."
+	incus file push $(BINARY_NAME) $(INCUS_INSTANCE)/home/ubuntu/
+	@echo "2. Updating binary on instance..."
+	incus exec $(INCUS_INSTANCE) -- sudo mv /home/ubuntu/$(BINARY_NAME) /usr/local/bin/
+	incus exec $(INCUS_INSTANCE) -- sudo chown root:root /usr/local/bin/$(BINARY_NAME)
+	incus exec $(INCUS_INSTANCE) -- sudo chmod 755 /usr/local/bin/$(BINARY_NAME)
+	@echo "3. Cleaning temporary files..."
+	incus exec $(INCUS_INSTANCE) -- rm -f /home/ubuntu/$(BINARY_NAME)
+	@echo "Update complete. Restart the service to apply changes."
+
 incus-start:
 	@echo "Starting service on Incus instance..."
 	incus exec $(INCUS_INSTANCE) -- sudo systemctl enable autohost-agent
