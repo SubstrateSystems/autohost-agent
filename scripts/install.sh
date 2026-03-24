@@ -244,16 +244,22 @@ collect_config() {
 create_system_user() {
   if id -u "$AGENT_USER" >/dev/null 2>&1; then
     log_info "Usuario del sistema '${AGENT_USER}' ya existe."
-    return
+  else
+    log_info "Creando usuario del sistema '${AGENT_USER}'..."
+    $SUDO useradd \
+      --system \
+      --no-create-home \
+      --shell /usr/sbin/nologin \
+      --comment "Autohost Agent" \
+      "$AGENT_USER"
+    log_ok "Usuario '${AGENT_USER}' creado."
   fi
-  log_info "Creando usuario del sistema '${AGENT_USER}'..."
-  $SUDO useradd \
-    --system \
-    --no-create-home \
-    --shell /usr/sbin/nologin \
-    --comment "Autohost Agent" \
-    "$AGENT_USER"
-  log_ok "Usuario '${AGENT_USER}' creado."
+
+  # Ensure membership in docker group for container management commands (idempotent)
+  if getent group docker >/dev/null 2>&1; then
+    $SUDO usermod -aG docker "$AGENT_USER"
+    log_ok "Usuario '${AGENT_USER}' añadido al grupo docker."
+  fi
 }
 
 # ──────────────────────────────────────────────
@@ -306,6 +312,7 @@ Wants=network-online.target
 Type=simple
 User=${AGENT_USER}
 Group=${AGENT_USER}
+SupplementaryGroups=docker
 ExecStart=${BIN_DIR}/${BIN_NAME} ${CONFIG_FILE}
 Restart=always
 RestartSec=10

@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package jobs;
+
+service JobService {
+  rpc StreamJobs(JobRequest) returns (stream Job) {}
+}
+
+message JobRequest {
+  string agent_id = 1;
+}
+
+message Job {
+  string id = 1;
+  string command = 2;
+  string payload = 3;
+}
