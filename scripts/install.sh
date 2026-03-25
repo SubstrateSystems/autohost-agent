@@ -312,7 +312,6 @@ Wants=network-online.target
 Type=simple
 User=${AGENT_USER}
 Group=${AGENT_USER}
-SupplementaryGroups=docker
 ExecStart=${BIN_DIR}/${BIN_NAME} ${CONFIG_FILE}
 Restart=always
 RestartSec=10
