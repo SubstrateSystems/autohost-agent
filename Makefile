@@ -179,7 +179,9 @@ deploy-incus-update: build
 	incus exec $(INCUS_INSTANCE) -- sudo chmod 755 /usr/local/bin/$(BINARY_NAME)
 	@echo "3. Cleaning temporary files..."
 	incus exec $(INCUS_INSTANCE) -- rm -f /home/ubuntu/$(BINARY_NAME)
-	@echo "Update complete. Restart the service to apply changes."
+	@echo "4. Restarting service..."
+	incus exec $(INCUS_INSTANCE) -- sudo systemctl restart autohost-agent
+	@echo "✓ Update complete and service restarted."
 
 incus-start:
 	@echo "Starting service on Incus instance..."

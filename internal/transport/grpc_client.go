@@ -212,8 +212,12 @@ func (c *GRPCClient) handleJob(ctx context.Context, job *pb.ExecuteJobPayload, r
 
 // ─── Log streaming ────────────────────────────────────────────────────────────
 
-// startLogStream launches a goroutine that tails journalctl and sends each
-// line as a LogEntryPayload through the results channel.
+// startLogStream launches a goroutine that streams logs and sends each line as
+// a LogEntryPayload through the results channel.
+//
+// If the unit value starts with the "docker:" prefix the goroutine runs
+// "docker logs -f <container>" instead of journalctl.  Any other value (or an
+// empty string) falls back to journalctl.
 func (c *GRPCClient) startLogStream(ctx context.Context, req *pb.StreamLogsPayload, results chan<- *pb.NodeMessage) {
 	c.stopLogStream() // cancel any previous stream
 
@@ -223,109 +227,210 @@ func (c *GRPCClient) startLogStream(ctx context.Context, req *pb.StreamLogsPaylo
 	c.logCancel = cancel
 	c.logMu.Unlock()
 
-	go func() {
-		defer cancel()
+	unit := req.GetUnit()
 
-		unit := req.GetUnit()
-		histLines := req.GetLines()
+	if strings.HasPrefix(unit, "docker:") {
+		containerName := strings.TrimPrefix(unit, "docker:")
+		go c.streamDockerLogs(logCtx, cancel, containerName, req.GetLines(), results)
+	} else {
+		go c.streamJournalctlLogs(logCtx, cancel, unit, req.GetLines(), results)
+	}
+}
 
-		sendMsg := func(u, msg string) {
+// streamDockerLogs tails "docker logs -f <container>" and forwards each line.
+// Both stdout and stderr of the container are merged into a single stream since
+// docker logs multiplex both onto the same output.
+func (c *GRPCClient) streamDockerLogs(logCtx context.Context, cancel context.CancelFunc, containerName string, histLines int32, results chan<- *pb.NodeMessage) {
+	defer cancel()
+
+	sendMsg := func(msg string) {
+		select {
+		case results <- &pb.NodeMessage{
+			Payload: &pb.NodeMessage_LogEntry{LogEntry: &pb.LogEntryPayload{
+				TimestampUs: time.Now().UnixMicro(),
+				Unit:        "docker:" + containerName,
+				Message:     msg,
+			}},
+		}:
+		case <-logCtx.Done():
+		}
+	}
+
+	firstRun := true
+	for {
+		if logCtx.Err() != nil {
+			return
+		}
+
+		args := []string{"logs", "-f", "--timestamps"}
+		if firstRun && histLines > 0 {
+			args = append(args, "--tail", fmt.Sprintf("%d", histLines))
+		} else {
+			args = append(args, "--tail", "0")
+		}
+		args = append(args, containerName)
+
+		cmd := exec.CommandContext(logCtx, "docker", args...)
+		// Merge stdout+stderr: container log lines appear on both streams.
+		pr, pw := io.Pipe()
+		cmd.Stdout = pw
+		cmd.Stderr = pw
+
+		if err := cmd.Start(); err != nil {
+			pw.CloseWithError(err)
+			pr.Close()
+			log.Printf("⚠️  docker logs start: %v", err)
+			sendMsg("⚠️ docker logs start error: " + err.Error())
+			return
+		}
+		log.Printf("📋 docker log stream started (container=%q lines=%d firstRun=%v)", containerName, histLines, firstRun)
+		firstRun = false
+
+		// Close the write end once the process finishes so the scanner exits.
+		go func() {
+			cmd.Wait()
+			pw.Close()
+		}()
+
+		scanner := bufio.NewScanner(pr)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if line == "" {
+				continue
+			}
+			select {
+			case results <- &pb.NodeMessage{
+				Payload: &pb.NodeMessage_LogEntry{LogEntry: &pb.LogEntryPayload{
+					TimestampUs: time.Now().UnixMicro(),
+					Unit:        "docker:" + containerName,
+					Message:     line,
+				}},
+			}:
+			case <-logCtx.Done():
+				cmd.Process.Kill()
+				pr.Close()
+				return
+			default:
+				// drop if the send buffer is full
+			}
+		}
+		pr.Close()
+
+		if logCtx.Err() != nil {
+			log.Printf("📋 docker log stream stopped (container=%q)", containerName)
+			return
+		}
+
+		log.Printf("⚠️  docker logs exited unexpectedly (container=%q), retrying in 3s…", containerName)
+		sendMsg("⚠️ docker logs exited, retrying in 3s…")
+		select {
+		case <-logCtx.Done():
+			return
+		case <-time.After(3 * time.Second):
+		}
+	}
+}
+
+// streamJournalctlLogs tails journalctl and forwards each line.
+func (c *GRPCClient) streamJournalctlLogs(logCtx context.Context, cancel context.CancelFunc, unit string, histLines int32, results chan<- *pb.NodeMessage) {
+	defer cancel()
+
+	sendMsg := func(u, msg string) {
+		select {
+		case results <- &pb.NodeMessage{
+			Payload: &pb.NodeMessage_LogEntry{LogEntry: &pb.LogEntryPayload{
+				TimestampUs: time.Now().UnixMicro(),
+				Unit:        u,
+				Message:     msg,
+			}},
+		}:
+		case <-logCtx.Done():
+		}
+	}
+
+	// firstRun controls tail lines: show history on first launch, skip on retries.
+	firstRun := true
+	for {
+		if logCtx.Err() != nil {
+			return
+		}
+
+		args := []string{"-f", "--output=short-iso", "--no-pager"}
+		if firstRun && histLines > 0 {
+			args = append(args, "-n", fmt.Sprintf("%d", histLines))
+		} else {
+			args = append(args, "-n", "0")
+		}
+		if unit != "" {
+			args = append(args, "-u", unit)
+		}
+
+		cmd := exec.CommandContext(logCtx, "journalctl", args...)
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			log.Printf("⚠️  journalctl pipe: %v", err)
+			sendMsg("agent", "⚠️ journalctl pipe error: "+err.Error())
+			return
+		}
+		var stderrBuf bytes.Buffer
+		cmd.Stderr = &stderrBuf
+
+		if err := cmd.Start(); err != nil {
+			log.Printf("⚠️  journalctl start: %v", err)
+			sendMsg("agent", "⚠️ journalctl start error: "+err.Error())
+			return
+		}
+		log.Printf("📋 log stream started (unit=%q lines=%d firstRun=%v)", unit, histLines, firstRun)
+		firstRun = false
+
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if line == "" {
+				continue
+			}
+			u := unit
+			if u == "" {
+				u = extractUnit(line)
+			}
 			select {
 			case results <- &pb.NodeMessage{
 				Payload: &pb.NodeMessage_LogEntry{LogEntry: &pb.LogEntryPayload{
 					TimestampUs: time.Now().UnixMicro(),
 					Unit:        u,
-					Message:     msg,
+					Message:     line,
 				}},
 			}:
 			case <-logCtx.Done():
+				cmd.Process.Kill()
+				return
+			default:
+				// drop if the send buffer is full
 			}
 		}
+		cmd.Wait()
 
-		// firstRun controls tail lines: show history on first launch, skip on retries.
-		firstRun := true
-		for {
-			if logCtx.Err() != nil {
-				return
-			}
-
-			args := []string{"-f", "--output=short-iso", "--no-pager"}
-			if firstRun && histLines > 0 {
-				args = append(args, "-n", fmt.Sprintf("%d", histLines))
-			} else {
-				args = append(args, "-n", "0")
-			}
-			if unit != "" {
-				args = append(args, "-u", unit)
-			}
-
-			cmd := exec.CommandContext(logCtx, "journalctl", args...)
-			stdout, err := cmd.StdoutPipe()
-			if err != nil {
-				log.Printf("⚠️  journalctl pipe: %v", err)
-				sendMsg("agent", "⚠️ journalctl pipe error: "+err.Error())
-				return
-			}
-			var stderrBuf bytes.Buffer
-			cmd.Stderr = &stderrBuf
-
-			if err := cmd.Start(); err != nil {
-				log.Printf("⚠️  journalctl start: %v", err)
-				sendMsg("agent", "⚠️ journalctl start error: "+err.Error())
-				return
-			}
-			log.Printf("📋 log stream started (unit=%q lines=%d firstRun=%v)", unit, histLines, firstRun)
-			firstRun = false
-
-			scanner := bufio.NewScanner(stdout)
-			for scanner.Scan() {
-				line := scanner.Text()
-				if line == "" {
-					continue
-				}
-				u := unit
-				if u == "" {
-					u = extractUnit(line)
-				}
-				select {
-				case results <- &pb.NodeMessage{
-					Payload: &pb.NodeMessage_LogEntry{LogEntry: &pb.LogEntryPayload{
-						TimestampUs: time.Now().UnixMicro(),
-						Unit:        u,
-						Message:     line,
-					}},
-				}:
-				case <-logCtx.Done():
-					cmd.Process.Kill()
-					return
-				default:
-					// drop if the send buffer is full
-				}
-			}
-			cmd.Wait()
-
-			if errOut := strings.TrimSpace(stderrBuf.String()); errOut != "" {
-				log.Printf("⚠️  journalctl stderr: %s", errOut)
-				sendMsg("agent", "⚠️ journalctl: "+errOut)
-			}
-
-			// If context was cancelled (stream stopped intentionally), exit cleanly.
-			if logCtx.Err() != nil {
-				log.Printf("📋 log stream stopped (unit=%q)", unit)
-				return
-			}
-
-			// journalctl exited unexpectedly (e.g. journal not ready in container).
-			// Wait briefly and retry so the UI keeps receiving logs once available.
-			log.Printf("⚠️  journalctl exited unexpectedly (unit=%q), retrying in 3s…", unit)
-			sendMsg("agent", "⚠️ journalctl exited, retrying in 3s…")
-			select {
-			case <-logCtx.Done():
-				return
-			case <-time.After(3 * time.Second):
-			}
+		if errOut := strings.TrimSpace(stderrBuf.String()); errOut != "" {
+			log.Printf("⚠️  journalctl stderr: %s", errOut)
+			sendMsg("agent", "⚠️ journalctl: "+errOut)
 		}
-	}()
+
+		// If context was cancelled (stream stopped intentionally), exit cleanly.
+		if logCtx.Err() != nil {
+			log.Printf("📋 log stream stopped (unit=%q)", unit)
+			return
+		}
+
+		// journalctl exited unexpectedly (e.g. journal not ready in container).
+		// Wait briefly and retry so the UI keeps receiving logs once available.
+		log.Printf("⚠️  journalctl exited unexpectedly (unit=%q), retrying in 3s…", unit)
+		sendMsg("agent", "⚠️ journalctl exited, retrying in 3s…")
+		select {
+		case <-logCtx.Done():
+			return
+		case <-time.After(3 * time.Second):
+		}
+	}
 }
 
 // stopLogStream cancels the active journalctl goroutine (if any).
