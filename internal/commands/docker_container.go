@@ -3,6 +3,7 @@ package commands
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"regexp"
@@ -17,10 +18,11 @@ var safeContainerName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_\-.]{0,127}$`
 //
 // Supported patterns:
 //
-//	container.list                → docker ps -a (JSON array output)
-//	container.start.<name>        → docker start <name>
-//	container.stop.<name>         → docker stop <name>
-//	container.restart.<name>      → docker restart <name>
+//	container.list                  → docker ps -a with live stats (JSON array)
+//	container.start.<name>          → docker start <name>
+//	container.stop.<name>           → docker stop <name>
+//	container.restart.<name>        → docker restart <name>
+//	container.stats.<name>          → docker stats --no-stream <name> (JSON)
 func execContainerCommand(ctx context.Context, jobType string) ExecuteResult {
 	// jobType examples: "container.list", "container.restart.my-app"
 	parts := strings.SplitN(jobType, ".", 3)
@@ -43,35 +45,120 @@ func execContainerCommand(ctx context.Context, jobType string) ExecuteResult {
 		}
 		return containerAction(ctx, action, name)
 
+	case "stats":
+		if len(parts) < 3 || parts[2] == "" {
+			return ExecuteResult{Err: fmt.Errorf("container stats: missing container name")}
+		}
+		name := parts[2]
+		if !safeContainerName.MatchString(name) {
+			return ExecuteResult{Err: fmt.Errorf("container stats: invalid container name %q", name)}
+		}
+		return containerStats(ctx, name)
+
+	case "logs":
+		if len(parts) < 3 || parts[2] == "" {
+			return ExecuteResult{Err: fmt.Errorf("container logs: missing container name")}
+		}
+		name := parts[2]
+		if !safeContainerName.MatchString(name) {
+			return ExecuteResult{Err: fmt.Errorf("container logs: invalid container name %q", name)}
+		}
+		cmd := exec.CommandContext(ctx, "docker", "logs", "--tail", "100", name)
+		var buf bytes.Buffer
+		cmd.Stdout = &buf
+		cmd.Stderr = &buf
+		if err := cmd.Run(); err != nil {
+			return ExecuteResult{Output: buf.String(), Err: fmt.Errorf("docker logs %s: %w", name, err)}
+		}
+		return ExecuteResult{Output: buf.String()}
+
 	default:
 		return ExecuteResult{Err: fmt.Errorf("unknown container action %q in %q", action, jobType)}
 	}
 }
 
-// containerList runs docker ps -a and returns a JSON array where each element
-// has the fields: id, name, image, state, status.
-func containerList(ctx context.Context) ExecuteResult {
-	cmd := exec.CommandContext(ctx, "docker", "ps", "-a", "--format",
-		`{"id":"{{.ID}}","name":"{{.Names}}","image":"{{.Image}}","state":"{{.State}}","status":"{{.Status}}"}`)
+// containerInfo is the JSON shape returned for each container in container.list.
+type containerInfo struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Image   string `json:"image"`
+	State   string `json:"state"`
+	Status  string `json:"status"`
+	CPU     string `json:"cpu,omitempty"`
+	Mem     string `json:"mem,omitempty"`
+	MemPerc string `json:"memPerc,omitempty"`
+}
 
-	out, err := cmd.Output()
+// rawStats is used to parse the JSON output of docker stats.
+type rawStats struct {
+	Name    string `json:"name"`
+	CPU     string `json:"cpu"`
+	Mem     string `json:"mem"`
+	MemPerc string `json:"memPerc"`
+}
+
+// containerList runs docker ps -a and merges live stats (cpu, mem, memPerc)
+// for running containers via docker stats --no-stream. Returns a JSON array.
+func containerList(ctx context.Context) ExecuteResult {
+	psCmd := exec.CommandContext(ctx, "docker", "ps", "-a",
+		"--format", "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.State}}\t{{.Status}}")
+	psOut, err := psCmd.Output()
 	if err != nil {
 		return ExecuteResult{Err: fmt.Errorf("docker ps: %w", err)}
 	}
 
-	// Each output line is a self-contained JSON object; combine into an array.
-	var items []string
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			items = append(items, line)
+	// Use a JSON format template to avoid ambiguity with tab/space in values.
+	// Docker container names cannot contain '"', so the JSON is always valid.
+	statsMap := map[string]rawStats{}
+	statsCmd := exec.CommandContext(ctx, "docker", "stats", "--no-stream",
+		"--format", `{"name":"{{.Name}}","cpu":"{{.CPUPerc}}","mem":"{{.MemUsage}}","memPerc":"{{.MemPerc}}"}`)
+	if statsOut, statsErr := statsCmd.Output(); statsErr == nil {
+		for _, line := range strings.Split(strings.TrimSpace(string(statsOut)), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			var s rawStats
+			if jsonErr := json.Unmarshal([]byte(line), &s); jsonErr == nil && s.Name != "" {
+				// Docker may prefix names with "/" — normalise for consistent lookup.
+				statsMap[strings.TrimPrefix(s.Name, "/")] = s
+			}
 		}
 	}
 
-	if len(items) == 0 {
+	var result []containerInfo
+	for _, line := range strings.Split(strings.TrimSpace(string(psOut)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 5)
+		if len(parts) != 5 {
+			continue
+		}
+		c := containerInfo{
+			ID:     parts[0],
+			Name:   parts[1],
+			Image:  parts[2],
+			State:  parts[3],
+			Status: parts[4],
+		}
+		if s, ok := statsMap[parts[1]]; ok {
+			c.CPU = s.CPU
+			c.Mem = s.Mem
+			c.MemPerc = s.MemPerc
+		}
+		result = append(result, c)
+	}
+
+	if len(result) == 0 {
 		return ExecuteResult{Output: "[]"}
 	}
-	return ExecuteResult{Output: "[" + strings.Join(items, ",") + "]"}
+	b, err := json.Marshal(result)
+	if err != nil {
+		return ExecuteResult{Err: fmt.Errorf("marshal containers: %w", err)}
+	}
+	return ExecuteResult{Output: string(b)}
 }
 
 // containerAction runs docker start/stop/restart <name>.
@@ -86,4 +173,14 @@ func containerAction(ctx context.Context, action, name string) ExecuteResult {
 		return ExecuteResult{Output: buf.String(), Err: fmt.Errorf("docker %s %s: %w", action, name, err)}
 	}
 	return ExecuteResult{Output: buf.String()}
+}
+
+func containerStats(ctx context.Context, name string) ExecuteResult {
+	cmd := exec.CommandContext(ctx, "docker", "stats", "--no-stream", "--format",
+		`{"name":"{{.Name}}","cpu":"{{.CPUPerc}}","mem":"{{.MemUsage}}"}`, name)
+	out, err := cmd.Output()
+	if err != nil {
+		return ExecuteResult{Err: fmt.Errorf("docker stats %s: %w", name, err)}
+	}
+	return ExecuteResult{Output: string(out)}
 }

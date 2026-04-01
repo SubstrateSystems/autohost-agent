@@ -73,8 +73,19 @@ func ensureCurl() error {
 func systemctlAvailable() bool { return exec.Command("which", "systemctl").Run() == nil }
 
 func runningInContainer() bool {
+	// Detectar Docker
 	if _, err := os.Stat("/.dockerenv"); err == nil {
 		return true
+	}
+	// Detectar LXC/LXD/Incus
+	if _, err := os.Stat("/dev/lxc"); err == nil {
+		return true
+	}
+	// Check cgroups para otros entornos
+	if data, err := os.ReadFile("/proc/1/cgroup"); err == nil {
+		if strings.Contains(string(data), "docker") || strings.Contains(string(data), "lxc") {
+			return true
+		}
 	}
 	// opcional: variable para forzar
 	return os.Getenv("AUTOHOST_IN_CONTAINER") == "true"
