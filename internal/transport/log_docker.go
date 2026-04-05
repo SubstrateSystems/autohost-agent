@@ -11,7 +11,6 @@ import (
 	"time"
 )
 
-
 // streamDockerLogs tails "docker logs -f <container>" and forwards each line.
 // Both stdout and stderr of the container are merged into a single stream since
 // docker logs multiplex both onto the same output
@@ -66,6 +65,14 @@ func (c *GRPCClient) streamDockerLogs(logCtx context.Context, cancel context.Can
 		go func() {
 			cmd.Wait()
 			pw.Close()
+		}()
+
+		// Guarantee scanner.Scan() unblocks quickly when context is cancelled:
+		// close the read end of the pipe directly so that the blocking Scan()
+		// call returns EOF without waiting for the process kill → Wait → pw.Close() chain.
+		go func() {
+			<-logCtx.Done()
+			pr.Close()
 		}()
 
 		scanner := bufio.NewScanner(pr)

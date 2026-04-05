@@ -64,6 +64,14 @@ func (c *GRPCClient) streamJournalctlLogs(logCtx context.Context, cancel context
 		log.Printf("📋 log stream started (unit=%q lines=%d firstRun=%v)", unit, histLines, firstRun)
 		firstRun = false
 
+		// Unblock scanner.Scan() immediately when context is cancelled,
+		// without waiting for the exec.CommandContext → cmd.Wait chain.
+		go func() {
+			<-logCtx.Done()
+			stdout.Close()
+		}()
+		firstRun = false
+
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
 			line := scanner.Text()
