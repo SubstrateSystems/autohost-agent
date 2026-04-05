@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"log"
@@ -10,13 +11,13 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
 	"autohost-agent/internal/commands"
 	pb "autohost-agent/internal/grpc/nodepb"
 )
-
 
 type GRPCClient struct {
 	address  string
@@ -57,14 +58,20 @@ func (c *GRPCClient) Run(ctx context.Context) error {
 
 func (c *GRPCClient) runOnce(ctx context.Context) error {
 	// gRPC addresses must be "host:port" — strip any http:// or https:// prefix.
+	// Use TLS when the address has an https:// scheme (e.g. via Cloudflare Tunnel).
 	addr := c.address
+	useTLS := strings.HasPrefix(addr, "https://")
 	addr = strings.TrimPrefix(addr, "https://")
 	addr = strings.TrimPrefix(addr, "http://")
 
-	conn, err := grpc.NewClient(
-		addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
+	var transportCreds grpc.DialOption
+	if useTLS {
+		transportCreds = grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{}))
+	} else {
+		transportCreds = grpc.WithTransportCredentials(insecure.NewCredentials())
+	}
+
+	conn, err := grpc.NewClient(addr, transportCreds)
 	if err != nil {
 		return fmt.Errorf("dial %s: %w", c.address, err)
 	}
