@@ -68,12 +68,16 @@ func (a *Agent) Run(ctx context.Context) error {
 		log.Println("Initial metrics sent successfully")
 	}
 
-	// Connect via gRPC for job reception.
-	go func() {
-		if err := a.grpcClient.Run(ctx); err != nil {
-			log.Printf("gRPC client stopped: %v", err)
-		}
-	}()
+	// Connect via gRPC for job reception (only if an address is configured).
+	if a.cfg.GRPCAddress != "" {
+		go func() {
+			if err := a.grpcClient.Run(ctx); err != nil {
+				log.Printf("gRPC client stopped: %v", err)
+			}
+		}()
+	} else {
+		log.Println("ℹ️  gRPC address not configured — command reception disabled")
+	}
 
 	heartbeatTicker := time.NewTicker(a.heartbeatInterval)
 	metricsTicker := time.NewTicker(a.metricsInterval)

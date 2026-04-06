@@ -41,6 +41,9 @@ func NewGRPCClient(address, token, nodeID string, registry *commands.Registry) *
 // Run connects to the gRPC server and maintains the session, reconnecting on
 // failure until the context is cancelled.
 func (c *GRPCClient) Run(ctx context.Context) error {
+	if c.address == "" {
+		return fmt.Errorf("gRPC address is empty — skipping")
+	}
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
