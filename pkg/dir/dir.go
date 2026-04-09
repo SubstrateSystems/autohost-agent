@@ -1,6 +1,7 @@
 package dir
 
 import (
+	"os"
 	"path/filepath"
 )
 
@@ -14,4 +15,23 @@ func GetSubdir(subdir string) string {
 
 func GetRootAppDir() string {
 	return filepath.Join("/opt/autohost")
+}
+
+func EnsureAutohostDirs() error {
+	subdirs := []string{
+		"config",
+		"templates",
+		"apps",
+		"logs",
+		"state",
+		"backups",
+		"config",
+	}
+
+	for _, sub := range subdirs {
+		if err := os.MkdirAll(GetSubdir(sub), 0755); err != nil {
+			return err
+		}
+	}
+	return nil
 }

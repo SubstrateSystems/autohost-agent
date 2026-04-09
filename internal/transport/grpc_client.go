@@ -63,13 +63,18 @@ func (c *GRPCClient) runOnce(ctx context.Context) error {
 	// gRPC addresses must be "host:port" — strip any http:// or https:// prefix.
 	// Use TLS when the address has an https:// scheme (e.g. via Cloudflare Tunnel).
 	addr := c.address
-	useTLS := strings.HasPrefix(addr, "https://")
+	useTLS := strings.HasPrefix(addr, "https://") || strings.HasSuffix(addr, ":443")
+	// 2. Limpiar la dirección para gRPC
 	addr = strings.TrimPrefix(addr, "https://")
 	addr = strings.TrimPrefix(addr, "http://")
 
 	var transportCreds grpc.DialOption
 	if useTLS {
-		transportCreds = grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{}))
+		// Usamos la configuración de TLS por defecto del sistema
+		// Esto es necesario para que Cloudflare acepte la conexión
+		transportCreds = grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+			ServerName: strings.Split(addr, ":")[0], // Asegura el SNI correcto
+		}))
 	} else {
 		transportCreds = grpc.WithTransportCredentials(insecure.NewCredentials())
 	}
@@ -185,7 +190,13 @@ func (c *GRPCClient) connectStream(ctx context.Context, client pb.NodeAgentServi
 func (c *GRPCClient) handleJob(ctx context.Context, job *pb.ExecuteJobPayload, results chan<- *pb.NodeMessage) {
 	log.Printf("⚙️  gRPC job %s: executing command %q", job.GetJobId(), job.GetCommandName())
 
-	res := c.registry.Execute(ctx, job.GetCommandName(), nil)
+	// Build optional payload from the proto params field.
+	var payload map[string]any
+	if p := job.GetParams(); p != "" {
+		payload = map[string]any{"params": p}
+	}
+
+	res := c.registry.Execute(ctx, job.GetCommandName(), payload)
 
 	var result *pb.JobResultPayload
 	if res.Err != nil {
