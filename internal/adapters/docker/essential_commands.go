@@ -14,7 +14,7 @@ import (
 func StopApp(app domain.AppName) error {
 	ymlPath := filepath.Join(dir.GetSubdir("apps"), string(app), "compose.yml")
 
-	return shell.ExecWithDir(filepath.Dir(ymlPath), "docker", "compose", "-f", ymlPath, "stop")
+	return shell.ExecWithDir(filepath.Dir(ymlPath), "docker", "compose", "stop")
 }
 
 func StartApp(app domain.AppName) error {
@@ -28,7 +28,7 @@ func StartApp(app domain.AppName) error {
 	fmt.Printf("🔄 Levantando aplicación '%s'...\n", app)
 
 	// Usar Exec con working dir del compose
-	return shell.ExecWithDir(filepath.Dir(ymlPath), "docker", "compose", "-f", ymlPath, "up", "-d")
+	return shell.ExecWithDir(filepath.Dir(ymlPath), "docker", "compose", "up", "-d")
 }
 
 func RemoveApp(app domain.AppName) error {
@@ -37,9 +37,8 @@ func RemoveApp(app domain.AppName) error {
 	}
 
 	appDir := filepath.Join(dir.GetSubdir("apps"), string(app))
-	ymlPath := filepath.Join(appDir, "compose.yml")
 
-	if err := shell.ExecWithDir(appDir, "docker", "compose", "-f", ymlPath, "down"); err != nil {
+	if err := shell.ExecWithDir(appDir, "docker", "compose", "down"); err != nil {
 		return fmt.Errorf("failed to stop app: %w", err)
 	}
 
@@ -49,7 +48,8 @@ func RemoveApp(app domain.AppName) error {
 func GetAppStatus(app domain.AppName) (string, error) {
 	ymlPath := filepath.Join(dir.GetSubdir("apps"), string(app), "compose.yml")
 
-	cmd := exec.Command("docker", "compose", "-f", ymlPath, "ps", "--status=running")
+	cmd := exec.Command("docker", "compose", "ps", "--status=running")
+	cmd.Dir = filepath.Dir(ymlPath)
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err
