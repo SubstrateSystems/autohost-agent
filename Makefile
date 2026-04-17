@@ -42,7 +42,7 @@ release:
 
 
 # Incus setup — instala y configura Incus en esta máquina
-incus-setup:
+setup-incus:
 	@echo "📦 Instalando Incus..."
 	@if command -v incus >/dev/null 2>&1; then \
 		echo "✅ Incus ya está instalado: $$(incus --version)"; \
@@ -64,9 +64,9 @@ incus-setup:
 		echo "✅ Ya perteneces al grupo incus"; \
 	fi
 	@echo ""
-	@echo "✓ Incus listo. Crea la instancia de prueba con: make incus-create"
+	@echo "✓ Incus listo. Crea la instancia de prueba con: make create-incus"
 
-incus-create:
+create-incus:
 	@echo "🚀 Creando instancia $(INCUS_INSTANCE)..."
 	@if incus info $(INCUS_INSTANCE) >/dev/null 2>&1; then \
 		echo "✅ La instancia $(INCUS_INSTANCE) ya existe"; \
@@ -76,7 +76,7 @@ incus-create:
 	fi
 
 # Incus deployment and management targets
-deploy-incus: build incus-create
+deploy-incus: build create-incus
 	@echo "Deploying to Incus instance $(INCUS_INSTANCE)..."
 
 	@echo "1. Transferring files..."
@@ -116,7 +116,7 @@ deploy-incus: build incus-create
 	@echo "Next steps:"
 	@echo "  1. Enable service: incus exec $(INCUS_INSTANCE) -- sudo systemctl enable autohost-agent"
 	@echo "  2. Start service:  incus exec $(INCUS_INSTANCE) -- sudo systemctl start autohost-agent"
-	@echo "  3. Check status:   incus exec $(INCUS_INSTANCE) -- sudo systemctl status autohost-agent"
+	@echo "  3. Check status:   make status-incus"
 
 deploy-incus-update: build
 	@echo "Updating Incus instance $(INCUS_INSTANCE)..."
@@ -136,17 +136,17 @@ start-incus:
 	@echo "Starting service on Incus instance..."
 	incus exec $(INCUS_INSTANCE) -- sudo systemctl enable autohost-agent
 	incus exec $(INCUS_INSTANCE) -- sudo systemctl start autohost-agent
-	@echo "Service started. Use 'make incus-status' to check status"
+	@echo "Service started. Use 'make status-incus' to check status"
 
-incus-stop:
+stop-incus:
 	@echo "Stopping service on Incus instance..."
 	incus exec $(INCUS_INSTANCE) -- sudo systemctl stop autohost-agent
 	@echo "Service stopped"
 
-incus-status:
+status-incus:
 	incus exec $(INCUS_INSTANCE) -- sudo systemctl status autohost-agent
 
-incus-logs:
+logs-incus:
 	incus exec $(INCUS_INSTANCE) -- sudo journalctl -u autohost-agent -f
 
 shell-incus:

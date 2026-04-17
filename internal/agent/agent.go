@@ -15,19 +15,31 @@ import (
 // Agent is the top-level orchestrator that coordinates all subsystems:
 // heartbeats, metrics collection, gRPC command reception, and job execution.
 type Agent struct {
-	cfg               *Config
-	apiClient         *api.Client
-	heartbeatService  *services.HeartbeatService
-	metricsService    *services.MetricsService
-	grpcClient        *transport.GRPCClient
-	registry          *commands.Registry
-	heartbeatInterval time.Duration
-	metricsInterval   time.Duration
+	cfg                *Config
+	configPath         string
+	apiClient          *api.Client
+	heartbeatService   *services.HeartbeatService
+	metricsService     *services.MetricsService
+	grpcClient         *transport.GRPCClient
+	registry           *commands.Registry
+	heartbeatInterval  time.Duration
+	metricsInterval    time.Duration
+	tokenUpdateInterval time.Duration
+	lastKnownTokens    struct {
+		access  string
+		refresh string
+	}
 }
 
 // New creates and wires all agent subsystems.
 func New(cfg *Config) *Agent {
-	apiClient := api.NewClient(cfg.APIURL, cfg.AgentToken)
+	var apiClient *api.Client
+	if cfg.RefreshToken != "" {
+		apiClient = api.NewClientWithRefresh(cfg.APIURL, cfg.AgentToken, cfg.RefreshToken)
+	} else {
+		apiClient = api.NewClient(cfg.APIURL, cfg.AgentToken)
+	}
+	
 	heartbeatService := services.NewHeartbeatService(cfg, apiClient)
 	metricsService := services.NewMetricsService()
 
@@ -39,16 +51,24 @@ func New(cfg *Config) *Agent {
 
 	grpcClient := transport.NewGRPCClient(cfg.GRPCAddress, cfg.AgentToken, cfg.NodeID, registry)
 
-	return &Agent{
-		cfg:               cfg,
-		apiClient:         apiClient,
-		heartbeatService:  heartbeatService,
-		metricsService:    metricsService,
-		grpcClient:        grpcClient,
-		registry:          registry,
-		heartbeatInterval: 15 * time.Second,
-		metricsInterval:   15 * time.Second,
+	agent := &Agent{
+		cfg:                 cfg,
+		configPath:          "/etc/autohost/config.yaml", // TODO: make configurable
+		apiClient:           apiClient,
+		heartbeatService:    heartbeatService,
+		metricsService:      metricsService,
+		grpcClient:          grpcClient,
+		registry:            registry,
+		heartbeatInterval:   15 * time.Second,
+		metricsInterval:     15 * time.Second,
+		tokenUpdateInterval: 30 * time.Second,
 	}
+	
+	// Store initial tokens for comparison
+	agent.lastKnownTokens.access = cfg.AgentToken
+	agent.lastKnownTokens.refresh = cfg.RefreshToken
+
+	return agent
 }
 
 // Run starts the agent main loop: heartbeats, metrics, and WebSocket listener.
@@ -81,8 +101,10 @@ func (a *Agent) Run(ctx context.Context) error {
 
 	heartbeatTicker := time.NewTicker(a.heartbeatInterval)
 	metricsTicker := time.NewTicker(a.metricsInterval)
+	tokenUpdateTicker := time.NewTicker(a.tokenUpdateInterval)
 	defer heartbeatTicker.Stop()
 	defer metricsTicker.Stop()
+	defer tokenUpdateTicker.Stop()
 
 	for {
 		select {
@@ -96,6 +118,10 @@ func (a *Agent) Run(ctx context.Context) error {
 		case <-metricsTicker.C:
 			if err := a.sendMetrics(ctx); err != nil {
 				log.Printf("error sending metrics: %v", err)
+			}
+		case <-tokenUpdateTicker.C:
+			if err := a.checkAndUpdateTokens(); err != nil {
+				log.Printf("error updating tokens: %v", err)
 			}
 		}
 	}
