@@ -34,3 +34,15 @@ func ExecWithDir(dir string, cmdName string, args ...string) error {
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
+
+// ExecWithDirOutput runs a command in the given directory and returns the
+// combined stdout+stderr output together with any error.
+func ExecWithDirOutput(dir string, cmdName string, args ...string) (string, error) {
+	cmd := exec.Command(cmdName, args...)
+	cmd.Dir = dir
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
+	err := cmd.Run()
+	return buf.String(), err
+}

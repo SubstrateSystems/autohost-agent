@@ -12,6 +12,8 @@ Group=autohost
 
 ExecStart=/usr/local/bin/autohost-agent /etc/autohost/config.yaml
 
+Environment=DOCKER_CONFIG=/var/lib/autohost/.docker
+
 Restart=always
 RestartSec=10
 

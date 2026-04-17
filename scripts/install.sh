@@ -313,6 +313,7 @@ Type=simple
 User=${AGENT_USER}
 Group=${AGENT_USER}
 ExecStart=${BIN_DIR}/${BIN_NAME} ${CONFIG_FILE}
+Environment=DOCKER_CONFIG=/var/lib/autohost/.docker
 Restart=always
 RestartSec=10
 StandardOutput=journal

@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"log"
-	"time"
 
 	"autohost-agent/internal/api"
 	"autohost-agent/internal/commands"
@@ -13,22 +12,28 @@ import (
 )
 
 // Agent is the top-level orchestrator that coordinates all subsystems:
-// heartbeats, metrics collection, gRPC command reception, and job execution.
+// gRPC (heartbeats, metrics, command reception) and job execution.
 type Agent struct {
-	cfg               *Config
-	apiClient         *api.Client
-	heartbeatService  *services.HeartbeatService
-	metricsService    *services.MetricsService
-	grpcClient        *transport.GRPCClient
-	registry          *commands.Registry
-	heartbeatInterval time.Duration
-	metricsInterval   time.Duration
+	cfg             *Config
+	configPath      string
+	apiClient       *api.Client
+	grpcClient      *transport.GRPCClient
+	registry        *commands.Registry
+	lastKnownTokens struct {
+		access  string
+		refresh string
+	}
 }
 
 // New creates and wires all agent subsystems.
 func New(cfg *Config) *Agent {
-	apiClient := api.NewClient(cfg.APIURL, cfg.AgentToken)
-	heartbeatService := services.NewHeartbeatService(cfg, apiClient)
+	var apiClient *api.Client
+	if cfg.RefreshToken != "" {
+		apiClient = api.NewClientWithRefresh(cfg.APIURL, cfg.AgentToken, cfg.RefreshToken)
+	} else {
+		apiClient = api.NewClient(cfg.APIURL, cfg.AgentToken)
+	}
+
 	metricsService := services.NewMetricsService()
 
 	registry := commands.NewRegistry()
@@ -37,70 +42,40 @@ func New(cfg *Config) *Agent {
 		log.Printf("⚠️  could not load custom scripts: %v", err)
 	}
 
-	grpcClient := transport.NewGRPCClient(cfg.GRPCAddress, cfg.AgentToken, cfg.NodeID, registry)
+	grpcClient := transport.NewGRPCClient(
+		cfg.GRPCAddress,
+		cfg.AgentToken,
+		cfg.NodeID,
+		cfg.Tags,
+		registry,
+		metricsService,
+	)
 
-	return &Agent{
-		cfg:               cfg,
-		apiClient:         apiClient,
-		heartbeatService:  heartbeatService,
-		metricsService:    metricsService,
-		grpcClient:        grpcClient,
-		registry:          registry,
-		heartbeatInterval: 15 * time.Second,
-		metricsInterval:   15 * time.Second,
+	a := &Agent{
+		cfg:        cfg,
+		configPath: "/etc/autohost/config.yaml",
+		apiClient:  apiClient,
+		grpcClient: grpcClient,
+		registry:   registry,
 	}
+	a.lastKnownTokens.access = cfg.AgentToken
+	a.lastKnownTokens.refresh = cfg.RefreshToken
+	return a
 }
 
-// Run starts the agent main loop: heartbeats, metrics, and WebSocket listener.
+// Run starts the agent: establishes gRPC connection which handles heartbeats,
+// metrics, and command reception internally.
 func (a *Agent) Run(ctx context.Context) error {
-	log.Printf("Agent starting - NodeID: %s, API: %s", a.cfg.NodeID, a.cfg.APIURL)
+	log.Printf("Agent starting — NodeID: %s, gRPC: %s", a.cfg.NodeID, a.cfg.GRPCAddress)
 
-	// Send initial heartbeat and metrics immediately.
-	if err := a.heartbeatService.Send(ctx); err != nil {
-		log.Printf("error sending initial heartbeat: %v", err)
-	} else {
-		log.Println("Initial heartbeat sent successfully")
+	if a.cfg.GRPCAddress == "" {
+		log.Println("ℹ️  gRPC address not configured — agent is idle")
+		<-ctx.Done()
+		return ctx.Err()
 	}
 
-	if err := a.sendMetrics(ctx); err != nil {
-		log.Printf("error sending initial metrics: %v", err)
-	} else {
-		log.Println("Initial metrics sent successfully")
+	if err := a.grpcClient.Run(ctx); err != nil {
+		log.Printf("gRPC client stopped: %v", err)
 	}
-
-	// Connect via gRPC for job reception.
-	go func() {
-		if err := a.grpcClient.Run(ctx); err != nil {
-			log.Printf("gRPC client stopped: %v", err)
-		}
-	}()
-
-	heartbeatTicker := time.NewTicker(a.heartbeatInterval)
-	metricsTicker := time.NewTicker(a.metricsInterval)
-	defer heartbeatTicker.Stop()
-	defer metricsTicker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Println("Agent shutting down...")
-			return ctx.Err()
-		case <-heartbeatTicker.C:
-			if err := a.heartbeatService.Send(ctx); err != nil {
-				log.Printf("error sending heartbeat: %v", err)
-			}
-		case <-metricsTicker.C:
-			if err := a.sendMetrics(ctx); err != nil {
-				log.Printf("error sending metrics: %v", err)
-			}
-		}
-	}
-}
-
-func (a *Agent) sendMetrics(ctx context.Context) error {
-	metrics, err := a.metricsService.Collect()
-	if err != nil {
-		return err
-	}
-	return a.apiClient.SendMetrics(ctx, metrics)
+	return ctx.Err()
 }

@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v5.27.1
-// source: node_agent.proto
+// source: proto/node_agent/v1/node_agent.proto
 
 package nodepb
 
@@ -24,8 +24,9 @@ const (
 type CommandType int32
 
 const (
-	CommandType_COMMAND_TYPE_DEFAULT CommandType = 0
-	CommandType_COMMAND_TYPE_CUSTOM  CommandType = 1
+	CommandType_COMMAND_TYPE_DEFAULT     CommandType = 0
+	CommandType_COMMAND_TYPE_CUSTOM      CommandType = 1
+	CommandType_COMMAND_TYPE_INSTALL_APP CommandType = 2
 )
 
 // Enum value maps for CommandType.
@@ -33,10 +34,12 @@ var (
 	CommandType_name = map[int32]string{
 		0: "COMMAND_TYPE_DEFAULT",
 		1: "COMMAND_TYPE_CUSTOM",
+		2: "COMMAND_TYPE_INSTALL_APP",
 	}
 	CommandType_value = map[string]int32{
-		"COMMAND_TYPE_DEFAULT": 0,
-		"COMMAND_TYPE_CUSTOM":  1,
+		"COMMAND_TYPE_DEFAULT":     0,
+		"COMMAND_TYPE_CUSTOM":      1,
+		"COMMAND_TYPE_INSTALL_APP": 2,
 	}
 )
 
@@ -51,11 +54,11 @@ func (x CommandType) String() string {
 }
 
 func (CommandType) Descriptor() protoreflect.EnumDescriptor {
-	return file_node_agent_proto_enumTypes[0].Descriptor()
+	return file_proto_node_agent_v1_node_agent_proto_enumTypes[0].Descriptor()
 }
 
 func (CommandType) Type() protoreflect.EnumType {
-	return &file_node_agent_proto_enumTypes[0]
+	return &file_proto_node_agent_v1_node_agent_proto_enumTypes[0]
 }
 
 func (x CommandType) Number() protoreflect.EnumNumber {
@@ -64,7 +67,7 @@ func (x CommandType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use CommandType.Descriptor instead.
 func (CommandType) EnumDescriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{0}
+	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{0}
 }
 
 type JobStatus int32
@@ -100,11 +103,11 @@ func (x JobStatus) String() string {
 }
 
 func (JobStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_node_agent_proto_enumTypes[1].Descriptor()
+	return file_proto_node_agent_v1_node_agent_proto_enumTypes[1].Descriptor()
 }
 
 func (JobStatus) Type() protoreflect.EnumType {
-	return &file_node_agent_proto_enumTypes[1]
+	return &file_proto_node_agent_v1_node_agent_proto_enumTypes[1]
 }
 
 func (x JobStatus) Number() protoreflect.EnumNumber {
@@ -113,7 +116,7 @@ func (x JobStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use JobStatus.Descriptor instead.
 func (JobStatus) EnumDescriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{1}
+	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{1}
 }
 
 type RegisterCommandRequest struct {
@@ -129,7 +132,7 @@ type RegisterCommandRequest struct {
 
 func (x *RegisterCommandRequest) Reset() {
 	*x = RegisterCommandRequest{}
-	mi := &file_node_agent_proto_msgTypes[0]
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -141,7 +144,7 @@ func (x *RegisterCommandRequest) String() string {
 func (*RegisterCommandRequest) ProtoMessage() {}
 
 func (x *RegisterCommandRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[0]
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -154,7 +157,7 @@ func (x *RegisterCommandRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterCommandRequest.ProtoReflect.Descriptor instead.
 func (*RegisterCommandRequest) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{0}
+	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *RegisterCommandRequest) GetNodeId() string {
@@ -201,7 +204,7 @@ type RegisterCommandsResponse struct {
 
 func (x *RegisterCommandsResponse) Reset() {
 	*x = RegisterCommandsResponse{}
-	mi := &file_node_agent_proto_msgTypes[1]
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -213,7 +216,7 @@ func (x *RegisterCommandsResponse) String() string {
 func (*RegisterCommandsResponse) ProtoMessage() {}
 
 func (x *RegisterCommandsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[1]
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -226,7 +229,7 @@ func (x *RegisterCommandsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterCommandsResponse.ProtoReflect.Descriptor instead.
 func (*RegisterCommandsResponse) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{1}
+	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *RegisterCommandsResponse) GetRegistered() int32 {
@@ -243,6 +246,7 @@ type NodeMessage struct {
 	//	*NodeMessage_JobResult
 	//	*NodeMessage_Heartbeat
 	//	*NodeMessage_LogEntry
+	//	*NodeMessage_Metric
 	Payload       isNodeMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -250,7 +254,7 @@ type NodeMessage struct {
 
 func (x *NodeMessage) Reset() {
 	*x = NodeMessage{}
-	mi := &file_node_agent_proto_msgTypes[2]
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -262,7 +266,7 @@ func (x *NodeMessage) String() string {
 func (*NodeMessage) ProtoMessage() {}
 
 func (x *NodeMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[2]
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -275,7 +279,7 @@ func (x *NodeMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeMessage.ProtoReflect.Descriptor instead.
 func (*NodeMessage) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{2}
+	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *NodeMessage) GetPayload() isNodeMessage_Payload {
@@ -312,6 +316,15 @@ func (x *NodeMessage) GetLogEntry() *LogEntryPayload {
 	return nil
 }
 
+func (x *NodeMessage) GetMetric() *MetricPayload {
+	if x != nil {
+		if x, ok := x.Payload.(*NodeMessage_Metric); ok {
+			return x.Metric
+		}
+	}
+	return nil
+}
+
 type isNodeMessage_Payload interface {
 	isNodeMessage_Payload()
 }
@@ -328,11 +341,133 @@ type NodeMessage_LogEntry struct {
 	LogEntry *LogEntryPayload `protobuf:"bytes,3,opt,name=log_entry,json=logEntry,proto3,oneof"`
 }
 
+type NodeMessage_Metric struct {
+	Metric *MetricPayload `protobuf:"bytes,4,opt,name=metric,proto3,oneof"`
+}
+
 func (*NodeMessage_JobResult) isNodeMessage_Payload() {}
 
 func (*NodeMessage_Heartbeat) isNodeMessage_Payload() {}
 
 func (*NodeMessage_LogEntry) isNodeMessage_Payload() {}
+
+func (*NodeMessage_Metric) isNodeMessage_Payload() {}
+
+type MetricPayload struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	CpuUsagePercent    float32                `protobuf:"fixed32,1,opt,name=cpu_usage_percent,json=cpuUsagePercent,proto3" json:"cpu_usage_percent,omitempty"`
+	RamTotalBytes      uint64                 `protobuf:"varint,2,opt,name=ram_total_bytes,json=ramTotalBytes,proto3" json:"ram_total_bytes,omitempty"`
+	RamUsedBytes       uint64                 `protobuf:"varint,3,opt,name=ram_used_bytes,json=ramUsedBytes,proto3" json:"ram_used_bytes,omitempty"`
+	RamAvailableBytes  uint64                 `protobuf:"varint,4,opt,name=ram_available_bytes,json=ramAvailableBytes,proto3" json:"ram_available_bytes,omitempty"`
+	RamUsagePercent    float32                `protobuf:"fixed32,5,opt,name=ram_usage_percent,json=ramUsagePercent,proto3" json:"ram_usage_percent,omitempty"`
+	DiskTotalBytes     uint64                 `protobuf:"varint,6,opt,name=disk_total_bytes,json=diskTotalBytes,proto3" json:"disk_total_bytes,omitempty"`
+	DiskUsedBytes      uint64                 `protobuf:"varint,7,opt,name=disk_used_bytes,json=diskUsedBytes,proto3" json:"disk_used_bytes,omitempty"`
+	DiskAvailableBytes uint64                 `protobuf:"varint,8,opt,name=disk_available_bytes,json=diskAvailableBytes,proto3" json:"disk_available_bytes,omitempty"`
+	DiskUsagePercent   float32                `protobuf:"fixed32,9,opt,name=disk_usage_percent,json=diskUsagePercent,proto3" json:"disk_usage_percent,omitempty"`
+	UptimeSeconds      int64                  `protobuf:"varint,10,opt,name=uptime_seconds,json=uptimeSeconds,proto3" json:"uptime_seconds,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *MetricPayload) Reset() {
+	*x = MetricPayload{}
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MetricPayload) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MetricPayload) ProtoMessage() {}
+
+func (x *MetricPayload) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MetricPayload.ProtoReflect.Descriptor instead.
+func (*MetricPayload) Descriptor() ([]byte, []int) {
+	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *MetricPayload) GetCpuUsagePercent() float32 {
+	if x != nil {
+		return x.CpuUsagePercent
+	}
+	return 0
+}
+
+func (x *MetricPayload) GetRamTotalBytes() uint64 {
+	if x != nil {
+		return x.RamTotalBytes
+	}
+	return 0
+}
+
+func (x *MetricPayload) GetRamUsedBytes() uint64 {
+	if x != nil {
+		return x.RamUsedBytes
+	}
+	return 0
+}
+
+func (x *MetricPayload) GetRamAvailableBytes() uint64 {
+	if x != nil {
+		return x.RamAvailableBytes
+	}
+	return 0
+}
+
+func (x *MetricPayload) GetRamUsagePercent() float32 {
+	if x != nil {
+		return x.RamUsagePercent
+	}
+	return 0
+}
+
+func (x *MetricPayload) GetDiskTotalBytes() uint64 {
+	if x != nil {
+		return x.DiskTotalBytes
+	}
+	return 0
+}
+
+func (x *MetricPayload) GetDiskUsedBytes() uint64 {
+	if x != nil {
+		return x.DiskUsedBytes
+	}
+	return 0
+}
+
+func (x *MetricPayload) GetDiskAvailableBytes() uint64 {
+	if x != nil {
+		return x.DiskAvailableBytes
+	}
+	return 0
+}
+
+func (x *MetricPayload) GetDiskUsagePercent() float32 {
+	if x != nil {
+		return x.DiskUsagePercent
+	}
+	return 0
+}
+
+func (x *MetricPayload) GetUptimeSeconds() int64 {
+	if x != nil {
+		return x.UptimeSeconds
+	}
+	return 0
+}
 
 type ServerMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -348,7 +483,7 @@ type ServerMessage struct {
 
 func (x *ServerMessage) Reset() {
 	*x = ServerMessage{}
-	mi := &file_node_agent_proto_msgTypes[3]
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -360,7 +495,7 @@ func (x *ServerMessage) String() string {
 func (*ServerMessage) ProtoMessage() {}
 
 func (x *ServerMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[3]
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -373,7 +508,7 @@ func (x *ServerMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerMessage.ProtoReflect.Descriptor instead.
 func (*ServerMessage) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{3}
+	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ServerMessage) GetPayload() isServerMessage_Payload {
@@ -444,7 +579,7 @@ type JobResultPayload struct {
 
 func (x *JobResultPayload) Reset() {
 	*x = JobResultPayload{}
-	mi := &file_node_agent_proto_msgTypes[4]
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -456,7 +591,7 @@ func (x *JobResultPayload) String() string {
 func (*JobResultPayload) ProtoMessage() {}
 
 func (x *JobResultPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[4]
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -469,7 +604,7 @@ func (x *JobResultPayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobResultPayload.ProtoReflect.Descriptor instead.
 func (*JobResultPayload) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{4}
+	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *JobResultPayload) GetJobId() string {
@@ -509,7 +644,7 @@ type HeartbeatPayload struct {
 
 func (x *HeartbeatPayload) Reset() {
 	*x = HeartbeatPayload{}
-	mi := &file_node_agent_proto_msgTypes[5]
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -521,7 +656,7 @@ func (x *HeartbeatPayload) String() string {
 func (*HeartbeatPayload) ProtoMessage() {}
 
 func (x *HeartbeatPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[5]
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -534,7 +669,7 @@ func (x *HeartbeatPayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatPayload.ProtoReflect.Descriptor instead.
 func (*HeartbeatPayload) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{5}
+	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *HeartbeatPayload) GetNodeId() string {
@@ -549,13 +684,14 @@ type ExecuteJobPayload struct {
 	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
 	CommandName   string                 `protobuf:"bytes,2,opt,name=command_name,json=commandName,proto3" json:"command_name,omitempty"`
 	CommandType   CommandType            `protobuf:"varint,3,opt,name=command_type,json=commandType,proto3,enum=node_agent.v1.CommandType" json:"command_type,omitempty"`
+	Params        string                 `protobuf:"bytes,4,opt,name=params,proto3" json:"params,omitempty"` // JSON-encoded parameters (e.g. for INSTALL_APP)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ExecuteJobPayload) Reset() {
 	*x = ExecuteJobPayload{}
-	mi := &file_node_agent_proto_msgTypes[6]
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -567,7 +703,7 @@ func (x *ExecuteJobPayload) String() string {
 func (*ExecuteJobPayload) ProtoMessage() {}
 
 func (x *ExecuteJobPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[6]
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -580,7 +716,7 @@ func (x *ExecuteJobPayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecuteJobPayload.ProtoReflect.Descriptor instead.
 func (*ExecuteJobPayload) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{6}
+	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ExecuteJobPayload) GetJobId() string {
@@ -604,6 +740,13 @@ func (x *ExecuteJobPayload) GetCommandType() CommandType {
 	return CommandType_COMMAND_TYPE_DEFAULT
 }
 
+func (x *ExecuteJobPayload) GetParams() string {
+	if x != nil {
+		return x.Params
+	}
+	return ""
+}
+
 // Sent by server to ask the agent to start streaming logs.
 type StreamLogsPayload struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -615,7 +758,7 @@ type StreamLogsPayload struct {
 
 func (x *StreamLogsPayload) Reset() {
 	*x = StreamLogsPayload{}
-	mi := &file_node_agent_proto_msgTypes[7]
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -627,7 +770,7 @@ func (x *StreamLogsPayload) String() string {
 func (*StreamLogsPayload) ProtoMessage() {}
 
 func (x *StreamLogsPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[7]
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -640,7 +783,7 @@ func (x *StreamLogsPayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamLogsPayload.ProtoReflect.Descriptor instead.
 func (*StreamLogsPayload) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{7}
+	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *StreamLogsPayload) GetUnit() string {
@@ -666,7 +809,7 @@ type StopLogsPayload struct {
 
 func (x *StopLogsPayload) Reset() {
 	*x = StopLogsPayload{}
-	mi := &file_node_agent_proto_msgTypes[8]
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -678,7 +821,7 @@ func (x *StopLogsPayload) String() string {
 func (*StopLogsPayload) ProtoMessage() {}
 
 func (x *StopLogsPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[8]
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -691,7 +834,7 @@ func (x *StopLogsPayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopLogsPayload.ProtoReflect.Descriptor instead.
 func (*StopLogsPayload) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{8}
+	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{9}
 }
 
 // Sent by agent to the server, one per log line.
@@ -706,7 +849,7 @@ type LogEntryPayload struct {
 
 func (x *LogEntryPayload) Reset() {
 	*x = LogEntryPayload{}
-	mi := &file_node_agent_proto_msgTypes[9]
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -718,7 +861,7 @@ func (x *LogEntryPayload) String() string {
 func (*LogEntryPayload) ProtoMessage() {}
 
 func (x *LogEntryPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[9]
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -731,7 +874,7 @@ func (x *LogEntryPayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogEntryPayload.ProtoReflect.Descriptor instead.
 func (*LogEntryPayload) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{9}
+	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *LogEntryPayload) GetTimestampUs() int64 {
@@ -755,11 +898,171 @@ func (x *LogEntryPayload) GetMessage() string {
 	return ""
 }
 
-var File_node_agent_proto protoreflect.FileDescriptor
+type MetricRequest struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	CpuUsagePercent    float32                `protobuf:"fixed32,1,opt,name=cpu_usage_percent,json=cpuUsagePercent,proto3" json:"cpu_usage_percent,omitempty"`
+	RamTotalBytes      uint64                 `protobuf:"varint,2,opt,name=ram_total_bytes,json=ramTotalBytes,proto3" json:"ram_total_bytes,omitempty"`
+	RamUsedBytes       uint64                 `protobuf:"varint,3,opt,name=ram_used_bytes,json=ramUsedBytes,proto3" json:"ram_used_bytes,omitempty"`
+	RamAvailableBytes  uint64                 `protobuf:"varint,4,opt,name=ram_available_bytes,json=ramAvailableBytes,proto3" json:"ram_available_bytes,omitempty"`
+	RamUsagePercent    float32                `protobuf:"fixed32,5,opt,name=ram_usage_percent,json=ramUsagePercent,proto3" json:"ram_usage_percent,omitempty"`
+	DiskTotalBytes     uint64                 `protobuf:"varint,6,opt,name=disk_total_bytes,json=diskTotalBytes,proto3" json:"disk_total_bytes,omitempty"`
+	DiskUsedBytes      uint64                 `protobuf:"varint,7,opt,name=disk_used_bytes,json=diskUsedBytes,proto3" json:"disk_used_bytes,omitempty"`
+	DiskAvailableBytes uint64                 `protobuf:"varint,8,opt,name=disk_available_bytes,json=diskAvailableBytes,proto3" json:"disk_available_bytes,omitempty"`
+	DiskUsagePercent   float32                `protobuf:"fixed32,9,opt,name=disk_usage_percent,json=diskUsagePercent,proto3" json:"disk_usage_percent,omitempty"`
+	UptimeSeconds      int64                  `protobuf:"varint,10,opt,name=uptime_seconds,json=uptimeSeconds,proto3" json:"uptime_seconds,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
 
-const file_node_agent_proto_rawDesc = "" +
+func (x *MetricRequest) Reset() {
+	*x = MetricRequest{}
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MetricRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MetricRequest) ProtoMessage() {}
+
+func (x *MetricRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MetricRequest.ProtoReflect.Descriptor instead.
+func (*MetricRequest) Descriptor() ([]byte, []int) {
+	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *MetricRequest) GetCpuUsagePercent() float32 {
+	if x != nil {
+		return x.CpuUsagePercent
+	}
+	return 0
+}
+
+func (x *MetricRequest) GetRamTotalBytes() uint64 {
+	if x != nil {
+		return x.RamTotalBytes
+	}
+	return 0
+}
+
+func (x *MetricRequest) GetRamUsedBytes() uint64 {
+	if x != nil {
+		return x.RamUsedBytes
+	}
+	return 0
+}
+
+func (x *MetricRequest) GetRamAvailableBytes() uint64 {
+	if x != nil {
+		return x.RamAvailableBytes
+	}
+	return 0
+}
+
+func (x *MetricRequest) GetRamUsagePercent() float32 {
+	if x != nil {
+		return x.RamUsagePercent
+	}
+	return 0
+}
+
+func (x *MetricRequest) GetDiskTotalBytes() uint64 {
+	if x != nil {
+		return x.DiskTotalBytes
+	}
+	return 0
+}
+
+func (x *MetricRequest) GetDiskUsedBytes() uint64 {
+	if x != nil {
+		return x.DiskUsedBytes
+	}
+	return 0
+}
+
+func (x *MetricRequest) GetDiskAvailableBytes() uint64 {
+	if x != nil {
+		return x.DiskAvailableBytes
+	}
+	return 0
+}
+
+func (x *MetricRequest) GetDiskUsagePercent() float32 {
+	if x != nil {
+		return x.DiskUsagePercent
+	}
+	return 0
+}
+
+func (x *MetricRequest) GetUptimeSeconds() int64 {
+	if x != nil {
+		return x.UptimeSeconds
+	}
+	return 0
+}
+
+type MetricResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MetricResponse) Reset() {
+	*x = MetricResponse{}
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MetricResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MetricResponse) ProtoMessage() {}
+
+func (x *MetricResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MetricResponse.ProtoReflect.Descriptor instead.
+func (*MetricResponse) Descriptor() ([]byte, []int) {
+	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *MetricResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+var File_proto_node_agent_v1_node_agent_proto protoreflect.FileDescriptor
+
+const file_proto_node_agent_v1_node_agent_proto_rawDesc = "" +
 	"\n" +
-	"\x10node_agent.proto\x12\rnode_agent.v1\"\xb8\x01\n" +
+	"$proto/node_agent/v1/node_agent.proto\x12\rnode_agent.v1\"\xb8\x01\n" +
 	"\x16RegisterCommandRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -770,13 +1073,26 @@ const file_node_agent_proto_rawDesc = "" +
 	"\x18RegisterCommandsResponse\x12\x1e\n" +
 	"\n" +
 	"registered\x18\x01 \x01(\x05R\n" +
-	"registered\"\xda\x01\n" +
+	"registered\"\x92\x02\n" +
 	"\vNodeMessage\x12@\n" +
 	"\n" +
 	"job_result\x18\x01 \x01(\v2\x1f.node_agent.v1.JobResultPayloadH\x00R\tjobResult\x12?\n" +
 	"\theartbeat\x18\x02 \x01(\v2\x1f.node_agent.v1.HeartbeatPayloadH\x00R\theartbeat\x12=\n" +
-	"\tlog_entry\x18\x03 \x01(\v2\x1e.node_agent.v1.LogEntryPayloadH\x00R\blogEntryB\t\n" +
-	"\apayload\"\xe3\x01\n" +
+	"\tlog_entry\x18\x03 \x01(\v2\x1e.node_agent.v1.LogEntryPayloadH\x00R\blogEntry\x126\n" +
+	"\x06metric\x18\x04 \x01(\v2\x1c.node_agent.v1.MetricPayloadH\x00R\x06metricB\t\n" +
+	"\apayload\"\xbe\x03\n" +
+	"\rMetricPayload\x12*\n" +
+	"\x11cpu_usage_percent\x18\x01 \x01(\x02R\x0fcpuUsagePercent\x12&\n" +
+	"\x0fram_total_bytes\x18\x02 \x01(\x04R\rramTotalBytes\x12$\n" +
+	"\x0eram_used_bytes\x18\x03 \x01(\x04R\framUsedBytes\x12.\n" +
+	"\x13ram_available_bytes\x18\x04 \x01(\x04R\x11ramAvailableBytes\x12*\n" +
+	"\x11ram_usage_percent\x18\x05 \x01(\x02R\x0framUsagePercent\x12(\n" +
+	"\x10disk_total_bytes\x18\x06 \x01(\x04R\x0ediskTotalBytes\x12&\n" +
+	"\x0fdisk_used_bytes\x18\a \x01(\x04R\rdiskUsedBytes\x120\n" +
+	"\x14disk_available_bytes\x18\b \x01(\x04R\x12diskAvailableBytes\x12,\n" +
+	"\x12disk_usage_percent\x18\t \x01(\x02R\x10diskUsagePercent\x12%\n" +
+	"\x0euptime_seconds\x18\n" +
+	" \x01(\x03R\ruptimeSeconds\"\xe3\x01\n" +
 	"\rServerMessage\x12C\n" +
 	"\vexecute_job\x18\x01 \x01(\v2 .node_agent.v1.ExecuteJobPayloadH\x00R\n" +
 	"executeJob\x12C\n" +
@@ -790,11 +1106,12 @@ const file_node_agent_proto_rawDesc = "" +
 	"\x06output\x18\x03 \x01(\tR\x06output\x12\x14\n" +
 	"\x05error\x18\x04 \x01(\tR\x05error\"+\n" +
 	"\x10HeartbeatPayload\x12\x17\n" +
-	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\x8c\x01\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\xa4\x01\n" +
 	"\x11ExecuteJobPayload\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12!\n" +
 	"\fcommand_name\x18\x02 \x01(\tR\vcommandName\x12=\n" +
-	"\fcommand_type\x18\x03 \x01(\x0e2\x1a.node_agent.v1.CommandTypeR\vcommandType\"=\n" +
+	"\fcommand_type\x18\x03 \x01(\x0e2\x1a.node_agent.v1.CommandTypeR\vcommandType\x12\x16\n" +
+	"\x06params\x18\x04 \x01(\tR\x06params\"=\n" +
 	"\x11StreamLogsPayload\x12\x12\n" +
 	"\x04unit\x18\x01 \x01(\tR\x04unit\x12\x14\n" +
 	"\x05lines\x18\x02 \x01(\x05R\x05lines\"\x11\n" +
@@ -802,78 +1119,101 @@ const file_node_agent_proto_rawDesc = "" +
 	"\x0fLogEntryPayload\x12!\n" +
 	"\ftimestamp_us\x18\x01 \x01(\x03R\vtimestampUs\x12\x12\n" +
 	"\x04unit\x18\x02 \x01(\tR\x04unit\x12\x18\n" +
-	"\amessage\x18\x03 \x01(\tR\amessage*@\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\"\xbe\x03\n" +
+	"\rMetricRequest\x12*\n" +
+	"\x11cpu_usage_percent\x18\x01 \x01(\x02R\x0fcpuUsagePercent\x12&\n" +
+	"\x0fram_total_bytes\x18\x02 \x01(\x04R\rramTotalBytes\x12$\n" +
+	"\x0eram_used_bytes\x18\x03 \x01(\x04R\framUsedBytes\x12.\n" +
+	"\x13ram_available_bytes\x18\x04 \x01(\x04R\x11ramAvailableBytes\x12*\n" +
+	"\x11ram_usage_percent\x18\x05 \x01(\x02R\x0framUsagePercent\x12(\n" +
+	"\x10disk_total_bytes\x18\x06 \x01(\x04R\x0ediskTotalBytes\x12&\n" +
+	"\x0fdisk_used_bytes\x18\a \x01(\x04R\rdiskUsedBytes\x120\n" +
+	"\x14disk_available_bytes\x18\b \x01(\x04R\x12diskAvailableBytes\x12,\n" +
+	"\x12disk_usage_percent\x18\t \x01(\x02R\x10diskUsagePercent\x12%\n" +
+	"\x0euptime_seconds\x18\n" +
+	" \x01(\x03R\ruptimeSeconds\"*\n" +
+	"\x0eMetricResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess*^\n" +
 	"\vCommandType\x12\x18\n" +
 	"\x14COMMAND_TYPE_DEFAULT\x10\x00\x12\x17\n" +
-	"\x13COMMAND_TYPE_CUSTOM\x10\x01*T\n" +
+	"\x13COMMAND_TYPE_CUSTOM\x10\x01\x12\x1c\n" +
+	"\x18COMMAND_TYPE_INSTALL_APP\x10\x02*T\n" +
 	"\tJobStatus\x12\x16\n" +
 	"\x12JOB_STATUS_RUNNING\x10\x00\x12\x18\n" +
 	"\x14JOB_STATUS_COMPLETED\x10\x01\x12\x15\n" +
-	"\x11JOB_STATUS_FAILED\x10\x022\xc1\x01\n" +
+	"\x11JOB_STATUS_FAILED\x10\x022\x8f\x02\n" +
 	"\x10NodeAgentService\x12d\n" +
 	"\x10RegisterCommands\x12%.node_agent.v1.RegisterCommandRequest\x1a'.node_agent.v1.RegisterCommandsResponse(\x01\x12G\n" +
-	"\aConnect\x12\x1a.node_agent.v1.NodeMessage\x1a\x1c.node_agent.v1.ServerMessage(\x010\x01B;Z9github.com/arturo/autohost-cloud-api/internal/grpc/nodepbb\x06proto3"
+	"\aConnect\x12\x1a.node_agent.v1.NodeMessage\x1a\x1c.node_agent.v1.ServerMessage(\x010\x01\x12L\n" +
+	"\rReportMetrics\x12\x1c.node_agent.v1.MetricRequest\x1a\x1d.node_agent.v1.MetricResponseB;Z9github.com/arturo/autohost-cloud-api/internal/grpc/nodepbb\x06proto3"
 
 var (
-	file_node_agent_proto_rawDescOnce sync.Once
-	file_node_agent_proto_rawDescData []byte
+	file_proto_node_agent_v1_node_agent_proto_rawDescOnce sync.Once
+	file_proto_node_agent_v1_node_agent_proto_rawDescData []byte
 )
 
-func file_node_agent_proto_rawDescGZIP() []byte {
-	file_node_agent_proto_rawDescOnce.Do(func() {
-		file_node_agent_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_node_agent_proto_rawDesc), len(file_node_agent_proto_rawDesc)))
+func file_proto_node_agent_v1_node_agent_proto_rawDescGZIP() []byte {
+	file_proto_node_agent_v1_node_agent_proto_rawDescOnce.Do(func() {
+		file_proto_node_agent_v1_node_agent_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_node_agent_v1_node_agent_proto_rawDesc), len(file_proto_node_agent_v1_node_agent_proto_rawDesc)))
 	})
-	return file_node_agent_proto_rawDescData
+	return file_proto_node_agent_v1_node_agent_proto_rawDescData
 }
 
-var file_node_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_node_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
-var file_node_agent_proto_goTypes = []any{
+var file_proto_node_agent_v1_node_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_proto_node_agent_v1_node_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_proto_node_agent_v1_node_agent_proto_goTypes = []any{
 	(CommandType)(0),                 // 0: node_agent.v1.CommandType
 	(JobStatus)(0),                   // 1: node_agent.v1.JobStatus
 	(*RegisterCommandRequest)(nil),   // 2: node_agent.v1.RegisterCommandRequest
 	(*RegisterCommandsResponse)(nil), // 3: node_agent.v1.RegisterCommandsResponse
 	(*NodeMessage)(nil),              // 4: node_agent.v1.NodeMessage
-	(*ServerMessage)(nil),            // 5: node_agent.v1.ServerMessage
-	(*JobResultPayload)(nil),         // 6: node_agent.v1.JobResultPayload
-	(*HeartbeatPayload)(nil),         // 7: node_agent.v1.HeartbeatPayload
-	(*ExecuteJobPayload)(nil),        // 8: node_agent.v1.ExecuteJobPayload
-	(*StreamLogsPayload)(nil),        // 9: node_agent.v1.StreamLogsPayload
-	(*StopLogsPayload)(nil),          // 10: node_agent.v1.StopLogsPayload
-	(*LogEntryPayload)(nil),          // 11: node_agent.v1.LogEntryPayload
+	(*MetricPayload)(nil),            // 5: node_agent.v1.MetricPayload
+	(*ServerMessage)(nil),            // 6: node_agent.v1.ServerMessage
+	(*JobResultPayload)(nil),         // 7: node_agent.v1.JobResultPayload
+	(*HeartbeatPayload)(nil),         // 8: node_agent.v1.HeartbeatPayload
+	(*ExecuteJobPayload)(nil),        // 9: node_agent.v1.ExecuteJobPayload
+	(*StreamLogsPayload)(nil),        // 10: node_agent.v1.StreamLogsPayload
+	(*StopLogsPayload)(nil),          // 11: node_agent.v1.StopLogsPayload
+	(*LogEntryPayload)(nil),          // 12: node_agent.v1.LogEntryPayload
+	(*MetricRequest)(nil),            // 13: node_agent.v1.MetricRequest
+	(*MetricResponse)(nil),           // 14: node_agent.v1.MetricResponse
 }
-var file_node_agent_proto_depIdxs = []int32{
+var file_proto_node_agent_v1_node_agent_proto_depIdxs = []int32{
 	0,  // 0: node_agent.v1.RegisterCommandRequest.type:type_name -> node_agent.v1.CommandType
-	6,  // 1: node_agent.v1.NodeMessage.job_result:type_name -> node_agent.v1.JobResultPayload
-	7,  // 2: node_agent.v1.NodeMessage.heartbeat:type_name -> node_agent.v1.HeartbeatPayload
-	11, // 3: node_agent.v1.NodeMessage.log_entry:type_name -> node_agent.v1.LogEntryPayload
-	8,  // 4: node_agent.v1.ServerMessage.execute_job:type_name -> node_agent.v1.ExecuteJobPayload
-	9,  // 5: node_agent.v1.ServerMessage.stream_logs:type_name -> node_agent.v1.StreamLogsPayload
-	10, // 6: node_agent.v1.ServerMessage.stop_logs:type_name -> node_agent.v1.StopLogsPayload
-	1,  // 7: node_agent.v1.JobResultPayload.status:type_name -> node_agent.v1.JobStatus
-	0,  // 8: node_agent.v1.ExecuteJobPayload.command_type:type_name -> node_agent.v1.CommandType
-	2,  // 9: node_agent.v1.NodeAgentService.RegisterCommands:input_type -> node_agent.v1.RegisterCommandRequest
-	4,  // 10: node_agent.v1.NodeAgentService.Connect:input_type -> node_agent.v1.NodeMessage
-	3,  // 11: node_agent.v1.NodeAgentService.RegisterCommands:output_type -> node_agent.v1.RegisterCommandsResponse
-	5,  // 12: node_agent.v1.NodeAgentService.Connect:output_type -> node_agent.v1.ServerMessage
-	11, // [11:13] is the sub-list for method output_type
-	9,  // [9:11] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	7,  // 1: node_agent.v1.NodeMessage.job_result:type_name -> node_agent.v1.JobResultPayload
+	8,  // 2: node_agent.v1.NodeMessage.heartbeat:type_name -> node_agent.v1.HeartbeatPayload
+	12, // 3: node_agent.v1.NodeMessage.log_entry:type_name -> node_agent.v1.LogEntryPayload
+	5,  // 4: node_agent.v1.NodeMessage.metric:type_name -> node_agent.v1.MetricPayload
+	9,  // 5: node_agent.v1.ServerMessage.execute_job:type_name -> node_agent.v1.ExecuteJobPayload
+	10, // 6: node_agent.v1.ServerMessage.stream_logs:type_name -> node_agent.v1.StreamLogsPayload
+	11, // 7: node_agent.v1.ServerMessage.stop_logs:type_name -> node_agent.v1.StopLogsPayload
+	1,  // 8: node_agent.v1.JobResultPayload.status:type_name -> node_agent.v1.JobStatus
+	0,  // 9: node_agent.v1.ExecuteJobPayload.command_type:type_name -> node_agent.v1.CommandType
+	2,  // 10: node_agent.v1.NodeAgentService.RegisterCommands:input_type -> node_agent.v1.RegisterCommandRequest
+	4,  // 11: node_agent.v1.NodeAgentService.Connect:input_type -> node_agent.v1.NodeMessage
+	13, // 12: node_agent.v1.NodeAgentService.ReportMetrics:input_type -> node_agent.v1.MetricRequest
+	3,  // 13: node_agent.v1.NodeAgentService.RegisterCommands:output_type -> node_agent.v1.RegisterCommandsResponse
+	6,  // 14: node_agent.v1.NodeAgentService.Connect:output_type -> node_agent.v1.ServerMessage
+	14, // 15: node_agent.v1.NodeAgentService.ReportMetrics:output_type -> node_agent.v1.MetricResponse
+	13, // [13:16] is the sub-list for method output_type
+	10, // [10:13] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
-func init() { file_node_agent_proto_init() }
-func file_node_agent_proto_init() {
-	if File_node_agent_proto != nil {
+func init() { file_proto_node_agent_v1_node_agent_proto_init() }
+func file_proto_node_agent_v1_node_agent_proto_init() {
+	if File_proto_node_agent_v1_node_agent_proto != nil {
 		return
 	}
-	file_node_agent_proto_msgTypes[2].OneofWrappers = []any{
+	file_proto_node_agent_v1_node_agent_proto_msgTypes[2].OneofWrappers = []any{
 		(*NodeMessage_JobResult)(nil),
 		(*NodeMessage_Heartbeat)(nil),
 		(*NodeMessage_LogEntry)(nil),
+		(*NodeMessage_Metric)(nil),
 	}
-	file_node_agent_proto_msgTypes[3].OneofWrappers = []any{
+	file_proto_node_agent_v1_node_agent_proto_msgTypes[4].OneofWrappers = []any{
 		(*ServerMessage_ExecuteJob)(nil),
 		(*ServerMessage_StreamLogs)(nil),
 		(*ServerMessage_StopLogs)(nil),
@@ -882,18 +1222,18 @@ func file_node_agent_proto_init() {
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_node_agent_proto_rawDesc), len(file_node_agent_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_node_agent_v1_node_agent_proto_rawDesc), len(file_proto_node_agent_v1_node_agent_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   10,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_node_agent_proto_goTypes,
-		DependencyIndexes: file_node_agent_proto_depIdxs,
-		EnumInfos:         file_node_agent_proto_enumTypes,
-		MessageInfos:      file_node_agent_proto_msgTypes,
+		GoTypes:           file_proto_node_agent_v1_node_agent_proto_goTypes,
+		DependencyIndexes: file_proto_node_agent_v1_node_agent_proto_depIdxs,
+		EnumInfos:         file_proto_node_agent_v1_node_agent_proto_enumTypes,
+		MessageInfos:      file_proto_node_agent_v1_node_agent_proto_msgTypes,
 	}.Build()
-	File_node_agent_proto = out.File
-	file_node_agent_proto_goTypes = nil
-	file_node_agent_proto_depIdxs = nil
+	File_proto_node_agent_v1_node_agent_proto = out.File
+	file_proto_node_agent_v1_node_agent_proto_goTypes = nil
+	file_proto_node_agent_v1_node_agent_proto_depIdxs = nil
 }

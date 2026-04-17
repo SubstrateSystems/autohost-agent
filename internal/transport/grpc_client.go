@@ -1,51 +1,60 @@
 package transport
 
 import (
-	"bufio"
-	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"log"
-	"os/exec"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
 	"autohost-agent/internal/commands"
 	pb "autohost-agent/internal/grpc/nodepb"
+	"autohost-agent/internal/services"
 )
 
-// GRPCClient manages the long-lived gRPC connection to cloud-api.
-// It handles RegisterCommands on startup and the bidirectional Connect stream
-// for job dispatch and result reporting.
 type GRPCClient struct {
-	address  string
-	token    string
-	nodeID   string
-	registry *commands.Registry
+	address        string
+	token          string
+	nodeID         string
+	tags           []string
+	registry       *commands.Registry
+	metricsService *services.MetricsService
+
+	heartbeatInterval time.Duration
+	metricsInterval   time.Duration
 
 	logMu     sync.Mutex
 	logCancel context.CancelFunc // non-nil while log streaming is active
 }
 
-// NewGRPCClient creates a new GRPCClient.
-func NewGRPCClient(address, token, nodeID string, registry *commands.Registry) *GRPCClient {
+func NewGRPCClient(address, token, nodeID string, tags []string, registry *commands.Registry, metricsService *services.MetricsService) *GRPCClient {
 	return &GRPCClient{
-		address:  address,
-		token:    token,
-		nodeID:   nodeID,
-		registry: registry,
+		address:           address,
+		token:             token,
+		nodeID:            nodeID,
+		tags:              tags,
+		registry:          registry,
+		metricsService:    metricsService,
+		heartbeatInterval: 30 * time.Second,
+		metricsInterval:   5 * time.Second,
 	}
 }
 
 // Run connects to the gRPC server and maintains the session, reconnecting on
 // failure until the context is cancelled.
 func (c *GRPCClient) Run(ctx context.Context) error {
+	if c.address == "" {
+		return fmt.Errorf("gRPC address is empty — skipping")
+	}
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -63,14 +72,25 @@ func (c *GRPCClient) Run(ctx context.Context) error {
 
 func (c *GRPCClient) runOnce(ctx context.Context) error {
 	// gRPC addresses must be "host:port" — strip any http:// or https:// prefix.
+	// Use TLS when the address has an https:// scheme (e.g. via Cloudflare Tunnel).
 	addr := c.address
+	useTLS := strings.HasPrefix(addr, "https://") || strings.HasSuffix(addr, ":443")
+	// 2. Limpiar la dirección para gRPC
 	addr = strings.TrimPrefix(addr, "https://")
 	addr = strings.TrimPrefix(addr, "http://")
 
-	conn, err := grpc.NewClient(
-		addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
+	var transportCreds grpc.DialOption
+	if useTLS {
+		// Usamos la configuración de TLS por defecto del sistema
+		// Esto es necesario para que Cloudflare acepte la conexión
+		transportCreds = grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+			ServerName: strings.Split(addr, ":")[0], // Asegura el SNI correcto
+		}))
+	} else {
+		transportCreds = grpc.WithTransportCredentials(insecure.NewCredentials())
+	}
+
+	conn, err := grpc.NewClient(addr, transportCreds)
 	if err != nil {
 		return fmt.Errorf("dial %s: %w", c.address, err)
 	}
@@ -127,10 +147,10 @@ func (c *GRPCClient) connectStream(ctx context.Context, client pb.NodeAgentServi
 	}
 	log.Printf("🔗 gRPC: Connect stream established (node %s)", c.nodeID)
 
-	// Buffered channel so job goroutines don't block on slow sends.
+	// Buffered channel so goroutines don't block on slow sends.
 	results := make(chan *pb.NodeMessage, 16)
 
-	// Sender: forwards job results to the server.
+	// Sender: forwards all NodeMessages to the server.
 	sendDone := make(chan struct{})
 	go func() {
 		defer close(sendDone)
@@ -150,7 +170,13 @@ func (c *GRPCClient) connectStream(ctx context.Context, client pb.NodeAgentServi
 		}
 	}()
 
-	// Receiver: handles ServerMessage frames (execute_job).
+	// Heartbeat goroutine: sends a HeartbeatPayload every heartbeatInterval.
+	go c.heartbeatLoop(ctx, results)
+
+	// Metrics goroutine: collects and sends MetricPayload every metricsInterval.
+	go c.metricsLoop(ctx, results)
+
+	// Receiver: handles ServerMessage frames (execute_job, stream_logs, etc.).
 	for {
 		msg, err := stream.Recv()
 		if err == io.EOF {
@@ -177,11 +203,118 @@ func (c *GRPCClient) connectStream(ctx context.Context, client pb.NodeAgentServi
 	return nil
 }
 
+// heartbeatLoop sends a HeartbeatPayload to the server at a fixed interval.
+func (c *GRPCClient) heartbeatLoop(ctx context.Context, out chan<- *pb.NodeMessage) {
+	ticker := time.NewTicker(c.heartbeatInterval)
+	defer ticker.Stop()
+
+	// Send the first heartbeat immediately.
+	c.sendHeartbeat(out)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.sendHeartbeat(out)
+		}
+	}
+}
+
+func (c *GRPCClient) sendHeartbeat(out chan<- *pb.NodeMessage) {
+	uptime, err := uptimeSeconds()
+	if err != nil {
+		uptime = 0
+	}
+	msg := &pb.NodeMessage{
+		Payload: &pb.NodeMessage_Heartbeat{
+			Heartbeat: &pb.HeartbeatPayload{
+				NodeId: c.nodeID,
+			},
+		},
+	}
+	_ = uptime // HeartbeatPayload only carries node_id; uptime goes in MetricPayload
+	select {
+	case out <- msg:
+	default:
+		log.Printf("⚠️  gRPC: heartbeat buffer full, skipping")
+	}
+}
+
+// metricsLoop collects system metrics and sends them to the server periodically.
+func (c *GRPCClient) metricsLoop(ctx context.Context, out chan<- *pb.NodeMessage) {
+	ticker := time.NewTicker(c.metricsInterval)
+	defer ticker.Stop()
+
+	// Send the first batch immediately.
+	c.sendMetrics(out)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.sendMetrics(out)
+		}
+	}
+}
+
+func (c *GRPCClient) sendMetrics(out chan<- *pb.NodeMessage) {
+	m, err := c.metricsService.Collect()
+	if err != nil {
+		log.Printf("⚠️  gRPC: collect metrics: %v", err)
+		return
+	}
+	uptime, _ := uptimeSeconds()
+	msg := &pb.NodeMessage{
+		Payload: &pb.NodeMessage_Metric{
+			Metric: &pb.MetricPayload{
+				CpuUsagePercent:    float32(m.CPUUsagePercent),
+				RamTotalBytes:      m.MemoryTotalBytes,
+				RamUsedBytes:       m.MemoryUsedBytes,
+				RamAvailableBytes:  m.MemoryAvailableBytes,
+				RamUsagePercent:    float32(m.MemoryUsagePercent),
+				DiskTotalBytes:     m.DiskTotalBytes,
+				DiskUsedBytes:      m.DiskUsedBytes,
+				DiskAvailableBytes: m.DiskAvailableBytes,
+				DiskUsagePercent:   float32(m.DiskUsagePercent),
+				UptimeSeconds:      uptime,
+			},
+		},
+	}
+	select {
+	case out <- msg:
+	default:
+		log.Printf("⚠️  gRPC: metrics buffer full, skipping")
+	}
+}
+
+// uptimeSeconds returns the system uptime in seconds.
+func uptimeSeconds() (int64, error) {
+	// Read /proc/uptime: first field is uptime in seconds (float).
+	data, err := os.ReadFile("/proc/uptime")
+	if err != nil {
+		return 0, err
+	}
+	var up float64
+	_, err = fmt.Sscanf(string(data), "%f", &up)
+	if err != nil {
+		return 0, err
+	}
+	return int64(up), nil
+}
+
 // handleJob executes the given job and sends the result back through results.
 func (c *GRPCClient) handleJob(ctx context.Context, job *pb.ExecuteJobPayload, results chan<- *pb.NodeMessage) {
 	log.Printf("⚙️  gRPC job %s: executing command %q", job.GetJobId(), job.GetCommandName())
 
-	res := c.registry.Execute(ctx, job.GetCommandName(), nil)
+	// Build optional payload from the proto params field.
+	var payload map[string]any
+	if p := job.GetParams(); p != "" {
+		payload = map[string]any{"params": p}
+	}
+
+	res := c.registry.Execute(ctx, job.GetCommandName(), payload)
 
 	var result *pb.JobResultPayload
 	if res.Err != nil {
@@ -208,257 +341,4 @@ func (c *GRPCClient) handleJob(ctx context.Context, job *pb.ExecuteJobPayload, r
 	default:
 		log.Printf("⚠️  gRPC: result buffer full, dropping result for job %s", job.GetJobId())
 	}
-}
-
-// ─── Log streaming ────────────────────────────────────────────────────────────
-
-// startLogStream launches a goroutine that streams logs and sends each line as
-// a LogEntryPayload through the results channel.
-//
-// If the unit value starts with the "docker:" prefix the goroutine runs
-// "docker logs -f <container>" instead of journalctl.  Any other value (or an
-// empty string) falls back to journalctl.
-func (c *GRPCClient) startLogStream(ctx context.Context, req *pb.StreamLogsPayload, results chan<- *pb.NodeMessage) {
-	c.stopLogStream() // cancel any previous stream
-
-	logCtx, cancel := context.WithCancel(ctx)
-
-	c.logMu.Lock()
-	c.logCancel = cancel
-	c.logMu.Unlock()
-
-	unit := req.GetUnit()
-
-	if strings.HasPrefix(unit, "docker:") {
-		containerName := strings.TrimPrefix(unit, "docker:")
-		go c.streamDockerLogs(logCtx, cancel, containerName, req.GetLines(), results)
-	} else {
-		go c.streamJournalctlLogs(logCtx, cancel, unit, req.GetLines(), results)
-	}
-}
-
-// streamDockerLogs tails "docker logs -f <container>" and forwards each line.
-// Both stdout and stderr of the container are merged into a single stream since
-// docker logs multiplex both onto the same output.
-func (c *GRPCClient) streamDockerLogs(logCtx context.Context, cancel context.CancelFunc, containerName string, histLines int32, results chan<- *pb.NodeMessage) {
-	defer cancel()
-
-	sendMsg := func(msg string) {
-		select {
-		case results <- &pb.NodeMessage{
-			Payload: &pb.NodeMessage_LogEntry{LogEntry: &pb.LogEntryPayload{
-				TimestampUs: time.Now().UnixMicro(),
-				Unit:        "docker:" + containerName,
-				Message:     msg,
-			}},
-		}:
-		case <-logCtx.Done():
-		}
-	}
-
-	firstRun := true
-	for {
-		if logCtx.Err() != nil {
-			return
-		}
-
-		args := []string{"logs", "-f", "--timestamps"}
-		if firstRun && histLines > 0 {
-			args = append(args, "--tail", fmt.Sprintf("%d", histLines))
-		} else {
-			args = append(args, "--tail", "0")
-		}
-		args = append(args, containerName)
-
-		cmd := exec.CommandContext(logCtx, "docker", args...)
-		// Merge stdout+stderr: container log lines appear on both streams.
-		pr, pw := io.Pipe()
-		cmd.Stdout = pw
-		cmd.Stderr = pw
-
-		if err := cmd.Start(); err != nil {
-			pw.CloseWithError(err)
-			pr.Close()
-			log.Printf("⚠️  docker logs start: %v", err)
-			sendMsg("⚠️ docker logs start error: " + err.Error())
-			return
-		}
-		log.Printf("📋 docker log stream started (container=%q lines=%d firstRun=%v)", containerName, histLines, firstRun)
-		firstRun = false
-
-		// Close the write end once the process finishes so the scanner exits.
-		go func() {
-			cmd.Wait()
-			pw.Close()
-		}()
-
-		scanner := bufio.NewScanner(pr)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if line == "" {
-				continue
-			}
-			select {
-			case results <- &pb.NodeMessage{
-				Payload: &pb.NodeMessage_LogEntry{LogEntry: &pb.LogEntryPayload{
-					TimestampUs: time.Now().UnixMicro(),
-					Unit:        "docker:" + containerName,
-					Message:     line,
-				}},
-			}:
-			case <-logCtx.Done():
-				cmd.Process.Kill()
-				pr.Close()
-				return
-			default:
-				// drop if the send buffer is full
-			}
-		}
-		pr.Close()
-
-		if logCtx.Err() != nil {
-			log.Printf("📋 docker log stream stopped (container=%q)", containerName)
-			return
-		}
-
-		log.Printf("⚠️  docker logs exited unexpectedly (container=%q), retrying in 3s…", containerName)
-		sendMsg("⚠️ docker logs exited, retrying in 3s…")
-		select {
-		case <-logCtx.Done():
-			return
-		case <-time.After(3 * time.Second):
-		}
-	}
-}
-
-// streamJournalctlLogs tails journalctl and forwards each line.
-func (c *GRPCClient) streamJournalctlLogs(logCtx context.Context, cancel context.CancelFunc, unit string, histLines int32, results chan<- *pb.NodeMessage) {
-	defer cancel()
-
-	sendMsg := func(u, msg string) {
-		select {
-		case results <- &pb.NodeMessage{
-			Payload: &pb.NodeMessage_LogEntry{LogEntry: &pb.LogEntryPayload{
-				TimestampUs: time.Now().UnixMicro(),
-				Unit:        u,
-				Message:     msg,
-			}},
-		}:
-		case <-logCtx.Done():
-		}
-	}
-
-	// firstRun controls tail lines: show history on first launch, skip on retries.
-	firstRun := true
-	for {
-		if logCtx.Err() != nil {
-			return
-		}
-
-		args := []string{"-f", "--output=short-iso", "--no-pager"}
-		if firstRun && histLines > 0 {
-			args = append(args, "-n", fmt.Sprintf("%d", histLines))
-		} else {
-			args = append(args, "-n", "0")
-		}
-		if unit != "" {
-			args = append(args, "-u", unit)
-		}
-
-		cmd := exec.CommandContext(logCtx, "journalctl", args...)
-		stdout, err := cmd.StdoutPipe()
-		if err != nil {
-			log.Printf("⚠️  journalctl pipe: %v", err)
-			sendMsg("agent", "⚠️ journalctl pipe error: "+err.Error())
-			return
-		}
-		var stderrBuf bytes.Buffer
-		cmd.Stderr = &stderrBuf
-
-		if err := cmd.Start(); err != nil {
-			log.Printf("⚠️  journalctl start: %v", err)
-			sendMsg("agent", "⚠️ journalctl start error: "+err.Error())
-			return
-		}
-		log.Printf("📋 log stream started (unit=%q lines=%d firstRun=%v)", unit, histLines, firstRun)
-		firstRun = false
-
-		scanner := bufio.NewScanner(stdout)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if line == "" {
-				continue
-			}
-			u := unit
-			if u == "" {
-				u = extractUnit(line)
-			}
-			select {
-			case results <- &pb.NodeMessage{
-				Payload: &pb.NodeMessage_LogEntry{LogEntry: &pb.LogEntryPayload{
-					TimestampUs: time.Now().UnixMicro(),
-					Unit:        u,
-					Message:     line,
-				}},
-			}:
-			case <-logCtx.Done():
-				cmd.Process.Kill()
-				return
-			default:
-				// drop if the send buffer is full
-			}
-		}
-		cmd.Wait()
-
-		if errOut := strings.TrimSpace(stderrBuf.String()); errOut != "" {
-			log.Printf("⚠️  journalctl stderr: %s", errOut)
-			sendMsg("agent", "⚠️ journalctl: "+errOut)
-		}
-
-		// If context was cancelled (stream stopped intentionally), exit cleanly.
-		if logCtx.Err() != nil {
-			log.Printf("📋 log stream stopped (unit=%q)", unit)
-			return
-		}
-
-		// journalctl exited unexpectedly (e.g. journal not ready in container).
-		// Wait briefly and retry so the UI keeps receiving logs once available.
-		log.Printf("⚠️  journalctl exited unexpectedly (unit=%q), retrying in 3s…", unit)
-		sendMsg("agent", "⚠️ journalctl exited, retrying in 3s…")
-		select {
-		case <-logCtx.Done():
-			return
-		case <-time.After(3 * time.Second):
-		}
-	}
-}
-
-// stopLogStream cancels the active journalctl goroutine (if any).
-func (c *GRPCClient) stopLogStream() {
-	c.logMu.Lock()
-	defer c.logMu.Unlock()
-	if c.logCancel != nil {
-		c.logCancel()
-		c.logCancel = nil
-	}
-}
-
-// extractUnit tries to parse the systemd unit name from a journalctl line.
-// journalctl --output=short-iso lines look like:
-//
-//	2026-03-09T12:00:00+0000 hostname unit[pid]: message
-func extractUnit(line string) string {
-	parts := strings.Fields(line)
-	if len(parts) >= 3 {
-		u := parts[2]
-		// Strip "[pid]:" suffix if present
-		if idx := strings.IndexByte(u, '['); idx > 0 {
-			return u[:idx]
-		}
-		if strings.HasSuffix(u, ":") {
-			return u[:len(u)-1]
-		}
-		return u
-	}
-	return ""
 }

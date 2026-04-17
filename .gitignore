@@ -1,3 +1,6 @@
+# GoReleaser output (generated locally, published to GitHub Releases by CI)
+dist/
+
 # Binaries
 autohost-agent
 *.exe
