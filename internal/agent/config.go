@@ -7,12 +7,13 @@ import (
 )
 
 type Config struct {
-	APIURL      string   `yaml:"api_url"`
-	WSURL       string   `yaml:"ws_url"`
-	GRPCAddress string   `yaml:"grpc_address"`
-	AgentToken  string   `yaml:"agent_token"`
-	NodeID      string   `yaml:"node_id"`
-	Tags        []string `yaml:"tags"`
+	APIURL       string   `yaml:"api_url"`
+	WSURL        string   `yaml:"ws_url"`
+	GRPCAddress  string   `yaml:"grpc_address"`
+	AgentToken   string   `yaml:"agent_token"`
+	RefreshToken string   `yaml:"refresh_token"`
+	NodeID       string   `yaml:"node_id"`
+	Tags         []string `yaml:"tags"`
 }
 
 func Load(path string) (*Config, error) {

@@ -14,14 +14,26 @@ import (
 // Agent is the top-level orchestrator that coordinates all subsystems:
 // gRPC (heartbeats, metrics, command reception) and job execution.
 type Agent struct {
-	cfg        *Config
-	grpcClient *transport.GRPCClient
-	registry   *commands.Registry
+	cfg             *Config
+	configPath      string
+	apiClient       *api.Client
+	grpcClient      *transport.GRPCClient
+	registry        *commands.Registry
+	lastKnownTokens struct {
+		access  string
+		refresh string
+	}
 }
 
 // New creates and wires all agent subsystems.
 func New(cfg *Config) *Agent {
-	apiClient := api.NewClient(cfg.APIURL, cfg.AgentToken)
+	var apiClient *api.Client
+	if cfg.RefreshToken != "" {
+		apiClient = api.NewClientWithRefresh(cfg.APIURL, cfg.AgentToken, cfg.RefreshToken)
+	} else {
+		apiClient = api.NewClient(cfg.APIURL, cfg.AgentToken)
+	}
+
 	metricsService := services.NewMetricsService()
 
 	registry := commands.NewRegistry()
@@ -39,18 +51,20 @@ func New(cfg *Config) *Agent {
 		metricsService,
 	)
 
-	// Keep the HTTP API client available for operations that still use HTTP
-	// (e.g. initial enrollment). Cast to suppress unused-variable warning.
-	_ = apiClient
-
-	return &Agent{
+	a := &Agent{
 		cfg:        cfg,
+		configPath: "/etc/autohost/config.yaml",
+		apiClient:  apiClient,
 		grpcClient: grpcClient,
 		registry:   registry,
 	}
+	a.lastKnownTokens.access = cfg.AgentToken
+	a.lastKnownTokens.refresh = cfg.RefreshToken
+	return a
 }
 
-// Run starts the agent main loop: gRPC connection with heartbeats and metrics.
+// Run starts the agent: establishes gRPC connection which handles heartbeats,
+// metrics, and command reception internally.
 func (a *Agent) Run(ctx context.Context) error {
 	log.Printf("Agent starting — NodeID: %s, gRPC: %s", a.cfg.NodeID, a.cfg.GRPCAddress)
 
@@ -63,6 +77,5 @@ func (a *Agent) Run(ctx context.Context) error {
 	if err := a.grpcClient.Run(ctx); err != nil {
 		log.Printf("gRPC client stopped: %v", err)
 	}
-
 	return ctx.Err()
 }
