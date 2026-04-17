@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -17,24 +18,34 @@ import (
 
 	"autohost-agent/internal/commands"
 	pb "autohost-agent/internal/grpc/nodepb"
+	"autohost-agent/internal/services"
 )
 
 type GRPCClient struct {
-	address  string
-	token    string
-	nodeID   string
-	registry *commands.Registry
+	address        string
+	token          string
+	nodeID         string
+	tags           []string
+	registry       *commands.Registry
+	metricsService *services.MetricsService
+
+	heartbeatInterval time.Duration
+	metricsInterval   time.Duration
 
 	logMu     sync.Mutex
 	logCancel context.CancelFunc // non-nil while log streaming is active
 }
 
-func NewGRPCClient(address, token, nodeID string, registry *commands.Registry) *GRPCClient {
+func NewGRPCClient(address, token, nodeID string, tags []string, registry *commands.Registry, metricsService *services.MetricsService) *GRPCClient {
 	return &GRPCClient{
-		address:  address,
-		token:    token,
-		nodeID:   nodeID,
-		registry: registry,
+		address:           address,
+		token:             token,
+		nodeID:            nodeID,
+		tags:              tags,
+		registry:          registry,
+		metricsService:    metricsService,
+		heartbeatInterval: 30 * time.Second,
+		metricsInterval:   5 * time.Second,
 	}
 }
 
@@ -136,10 +147,10 @@ func (c *GRPCClient) connectStream(ctx context.Context, client pb.NodeAgentServi
 	}
 	log.Printf("🔗 gRPC: Connect stream established (node %s)", c.nodeID)
 
-	// Buffered channel so job goroutines don't block on slow sends.
+	// Buffered channel so goroutines don't block on slow sends.
 	results := make(chan *pb.NodeMessage, 16)
 
-	// Sender: forwards job results to the server.
+	// Sender: forwards all NodeMessages to the server.
 	sendDone := make(chan struct{})
 	go func() {
 		defer close(sendDone)
@@ -159,7 +170,13 @@ func (c *GRPCClient) connectStream(ctx context.Context, client pb.NodeAgentServi
 		}
 	}()
 
-	// Receiver: handles ServerMessage frames (execute_job).
+	// Heartbeat goroutine: sends a HeartbeatPayload every heartbeatInterval.
+	go c.heartbeatLoop(ctx, results)
+
+	// Metrics goroutine: collects and sends MetricPayload every metricsInterval.
+	go c.metricsLoop(ctx, results)
+
+	// Receiver: handles ServerMessage frames (execute_job, stream_logs, etc.).
 	for {
 		msg, err := stream.Recv()
 		if err == io.EOF {
@@ -184,6 +201,107 @@ func (c *GRPCClient) connectStream(ctx context.Context, client pb.NodeAgentServi
 	close(results)
 	<-sendDone
 	return nil
+}
+
+// heartbeatLoop sends a HeartbeatPayload to the server at a fixed interval.
+func (c *GRPCClient) heartbeatLoop(ctx context.Context, out chan<- *pb.NodeMessage) {
+	ticker := time.NewTicker(c.heartbeatInterval)
+	defer ticker.Stop()
+
+	// Send the first heartbeat immediately.
+	c.sendHeartbeat(out)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.sendHeartbeat(out)
+		}
+	}
+}
+
+func (c *GRPCClient) sendHeartbeat(out chan<- *pb.NodeMessage) {
+	uptime, err := uptimeSeconds()
+	if err != nil {
+		uptime = 0
+	}
+	msg := &pb.NodeMessage{
+		Payload: &pb.NodeMessage_Heartbeat{
+			Heartbeat: &pb.HeartbeatPayload{
+				NodeId: c.nodeID,
+			},
+		},
+	}
+	_ = uptime // HeartbeatPayload only carries node_id; uptime goes in MetricPayload
+	select {
+	case out <- msg:
+	default:
+		log.Printf("⚠️  gRPC: heartbeat buffer full, skipping")
+	}
+}
+
+// metricsLoop collects system metrics and sends them to the server periodically.
+func (c *GRPCClient) metricsLoop(ctx context.Context, out chan<- *pb.NodeMessage) {
+	ticker := time.NewTicker(c.metricsInterval)
+	defer ticker.Stop()
+
+	// Send the first batch immediately.
+	c.sendMetrics(out)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.sendMetrics(out)
+		}
+	}
+}
+
+func (c *GRPCClient) sendMetrics(out chan<- *pb.NodeMessage) {
+	m, err := c.metricsService.Collect()
+	if err != nil {
+		log.Printf("⚠️  gRPC: collect metrics: %v", err)
+		return
+	}
+	uptime, _ := uptimeSeconds()
+	msg := &pb.NodeMessage{
+		Payload: &pb.NodeMessage_Metric{
+			Metric: &pb.MetricPayload{
+				CpuUsagePercent:    float32(m.CPUUsagePercent),
+				RamTotalBytes:      m.MemoryTotalBytes,
+				RamUsedBytes:       m.MemoryUsedBytes,
+				RamAvailableBytes:  m.MemoryAvailableBytes,
+				RamUsagePercent:    float32(m.MemoryUsagePercent),
+				DiskTotalBytes:     m.DiskTotalBytes,
+				DiskUsedBytes:      m.DiskUsedBytes,
+				DiskAvailableBytes: m.DiskAvailableBytes,
+				DiskUsagePercent:   float32(m.DiskUsagePercent),
+				UptimeSeconds:      uptime,
+			},
+		},
+	}
+	select {
+	case out <- msg:
+	default:
+		log.Printf("⚠️  gRPC: metrics buffer full, skipping")
+	}
+}
+
+// uptimeSeconds returns the system uptime in seconds.
+func uptimeSeconds() (int64, error) {
+	// Read /proc/uptime: first field is uptime in seconds (float).
+	data, err := os.ReadFile("/proc/uptime")
+	if err != nil {
+		return 0, err
+	}
+	var up float64
+	_, err = fmt.Sscanf(string(data), "%f", &up)
+	if err != nil {
+		return 0, err
+	}
+	return int64(up), nil
 }
 
 // handleJob executes the given job and sends the result back through results.
