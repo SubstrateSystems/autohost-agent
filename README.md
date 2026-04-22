@@ -246,7 +246,7 @@ autohost-agent/
 Un solo comando: descarga el binario, crea el usuario de sistema, genera `/etc/autohost/config.yaml` y registra el servicio systemd:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SubstrateSystems/autohost-agent/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/mazapanuwu13/autohost-agent/main/scripts/install.sh | bash
 ```
 
 El instalador te pedirá de forma interactiva:
@@ -262,13 +262,13 @@ AUTOHOST_API_URL=https://cloud.autohost.dev \
 AUTOHOST_TOKEN=autohost-node_xxxx \
 AUTOHOST_NODE_ID=mi-servidor \
 AUTOHOST_TAGS="production,web" \
-bash <(curl -fsSL https://raw.githubusercontent.com/SubstrateSystems/autohost-agent/main/scripts/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/mazapanuwu13/autohost-agent/main/scripts/install.sh)
 ```
 
 ### Versión específica
 
 ```bash
-VERSION=v0.2.0 curl -fsSL https://raw.githubusercontent.com/SubstrateSystems/autohost-agent/main/scripts/install.sh | bash
+VERSION=v0.2.0 curl -fsSL https://raw.githubusercontent.com/mazapanuwu13/autohost-agent/main/scripts/install.sh | bash
 ```
 
 ### Verificar instalación
