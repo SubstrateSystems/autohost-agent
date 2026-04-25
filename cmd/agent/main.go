@@ -43,7 +43,7 @@ func main() {
 		log.Fatalf("loading config: %v", err)
 	}
 
-	a := agent.New(cfg)
+	a := agent.New(cfg, Version)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
