@@ -138,7 +138,7 @@ func (c *Client) ListRoutes() ([]Route, error) {
 		return nil, fmt.Errorf("get routes: %w", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound {
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusBadRequest {
 		return []Route{}, nil
 	}
 	if resp.StatusCode >= 300 {
