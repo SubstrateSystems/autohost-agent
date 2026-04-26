@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -337,9 +338,15 @@ func (c *GRPCClient) handleJob(ctx context.Context, job *pb.ExecuteJobPayload, r
 	log.Printf("⚙️  gRPC job %s: executing command %q", job.GetJobId(), job.GetCommandName())
 
 	// Build optional payload from the proto params field.
+	// params is a JSON object string — unmarshal it so commands can access
+	// individual keys directly (e.g. payload["domain"]).
 	var payload map[string]any
 	if p := job.GetParams(); p != "" {
-		payload = map[string]any{"params": p}
+		if err := json.Unmarshal([]byte(p), &payload); err != nil {
+			// Fall back to wrapping it so the raw string is still accessible.
+			payload = map[string]any{"params": p}
+			log.Printf("⚠️  gRPC job %s: could not parse params JSON: %v", job.GetJobId(), err)
+		}
 	}
 
 	res := c.registry.Execute(ctx, job.GetCommandName(), payload)
