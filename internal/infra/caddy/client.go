@@ -75,6 +75,7 @@ type Route struct {
 
 // serverConfig is used to decode a single HTTP server from the Caddy config.
 type serverConfig struct {
+	Listen []string     `json:"listen"`
 	Routes []caddyRoute `json:"routes"`
 }
 
@@ -123,13 +124,13 @@ func (c *Client) UpsertRoute(domain, upstreamDial string) error {
 		return nil
 	}
 
-	// If the named block doesn't exist yet, append to the server routes list.
-	// Ensure the HTTP server exists first.
-	if err := c.ensureServer(); err != nil {
-		return fmt.Errorf("ensure server: %w", err)
+	// New route — find (or create) the HTTPS server to append to.
+	serverName, err := c.findOrCreateServer()
+	if err != nil {
+		return fmt.Errorf("find server: %w", err)
 	}
 
-	return c.postJSON("/config/apps/http/servers/autohost/routes", body)
+	return c.postJSON("/config/apps/http/servers/"+serverName+"/routes", body)
 }
 
 // DeleteRoute removes the reverse-proxy route for the given domain.
@@ -255,23 +256,53 @@ func (c *Client) postJSON(path string, body []byte) error {
 	return nil
 }
 
-// ensureServer makes sure the Caddy config has an HTTP server named "autohost"
-// with an HTTPS listener. It is safe to call multiple times.
-func (c *Client) ensureServer() error {
-	resp, err := c.httpClient.Get(c.adminURL + "/config/apps/http/servers/autohost")
+// findOrCreateServer returns the name of an HTTP server that listens on :443
+// or :80. If one exists already (e.g. created by the Caddyfile as "srv0"), its
+// name is returned and no server is created. Otherwise an "autohost" server is
+// created with :443/:80 listeners.
+func (c *Client) findOrCreateServer() (string, error) {
+	resp, err := c.httpClient.Get(c.adminURL + "/config/apps/http/servers")
 	if err != nil {
-		return err
+		return "", err
 	}
-	resp.Body.Close()
-	if resp.StatusCode == http.StatusOK {
-		return nil // already exists
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusBadRequest {
+		// No HTTP app configured at all — create from scratch.
+		return "autohost", c.createServer("autohost")
+	}
+	if resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("list servers: status %d: %s", resp.StatusCode, string(b))
 	}
 
-	// Create the server with an HTTPS listen address and auto HTTPS.
+	var servers map[string]serverConfig
+	if err := json.NewDecoder(resp.Body).Decode(&servers); err != nil {
+		return "", fmt.Errorf("decode servers: %w", err)
+	}
+
+	// Prefer an existing server that already handles HTTPS/HTTP traffic.
+	for name, srv := range servers {
+		for _, addr := range srv.Listen {
+			if addr == ":443" || addr == ":80" || addr == ":443" {
+				return name, nil
+			}
+		}
+	}
+
+	// No matching server found — create "autohost".
+	if _, ok := servers["autohost"]; ok {
+		return "autohost", nil // already exists without standard listeners
+	}
+	return "autohost", c.createServer("autohost")
+}
+
+// createServer creates a minimal HTTP server with :443 and :80 listeners.
+func (c *Client) createServer(name string) error {
 	server := map[string]any{
 		"listen": []string{":443", ":80"},
 		"routes": []any{},
 	}
 	body, _ := json.Marshal(server)
-	return c.postJSON("/config/apps/http/servers/autohost", body)
+	return c.postJSON("/config/apps/http/servers/"+name, body)
 }
