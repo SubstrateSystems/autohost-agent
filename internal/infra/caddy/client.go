@@ -67,7 +67,7 @@ type upstream struct {
 
 // Route is a simplified view of a Caddy reverse-proxy route.
 type Route struct {
-	Domain  string `json:"domain"`
+	Domain   string `json:"domain"`
 	Upstream string `json:"upstream"`
 	// Managed is true when the route was created by autohost (has the autohost- @id prefix).
 	Managed bool `json:"managed"`
