@@ -126,4 +126,7 @@ func RegisterAll(r *Registry) {
 	r.Register("docker.install", &DockerInstall{})
 	r.Register("script.exec", &ScriptExec{})
 	r.Register("marketplace.install", &MarketplaceInstall{})
+	r.Register("caddy.upsert-route", &CaddyUpsertRoute{})
+	r.Register("caddy.delete-route", &CaddyDeleteRoute{})
+	r.Register("caddy.status", &CaddyStatus{})
 }
