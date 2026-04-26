@@ -34,6 +34,8 @@ type GRPCClient struct {
 
 	logMu     sync.Mutex
 	logCancel context.CancelFunc // non-nil while log streaming is active
+
+	healthMon *healthMonitor
 }
 
 func NewGRPCClient(address, token, nodeID string, tags []string, registry *commands.Registry, metricsService *services.MetricsService) *GRPCClient {
@@ -46,6 +48,7 @@ func NewGRPCClient(address, token, nodeID string, tags []string, registry *comma
 		metricsService:    metricsService,
 		heartbeatInterval: 30 * time.Second,
 		metricsInterval:   5 * time.Second,
+		healthMon:         newHealthMonitor(),
 	}
 }
 
@@ -147,8 +150,16 @@ func (c *GRPCClient) connectStream(ctx context.Context, client pb.NodeAgentServi
 	}
 	log.Printf("🔗 gRPC: Connect stream established (node %s)", c.nodeID)
 
+	// streamCtx is cancelled when this function returns (either on EOF or error),
+	// ensuring all goroutines tied to this session are stopped on exit.
+	streamCtx, streamCancel := context.WithCancel(ctx)
+	defer func() {
+		streamCancel()
+		c.healthMon.stopAll()
+	}()
+
 	// Buffered channel so goroutines don't block on slow sends.
-	results := make(chan *pb.NodeMessage, 16)
+	results := make(chan *pb.NodeMessage, 32)
 
 	// Sender: forwards all NodeMessages to the server.
 	sendDone := make(chan struct{})
@@ -162,19 +173,20 @@ func (c *GRPCClient) connectStream(ctx context.Context, client pb.NodeAgentServi
 				}
 				if err := stream.Send(msg); err != nil {
 					log.Printf("gRPC send error: %v", err)
+					streamCancel() // signal all goroutines to stop
 					return
 				}
-			case <-ctx.Done():
+			case <-streamCtx.Done():
 				return
 			}
 		}
 	}()
 
 	// Heartbeat goroutine: sends a HeartbeatPayload every heartbeatInterval.
-	go c.heartbeatLoop(ctx, results)
+	go c.heartbeatLoop(streamCtx, results)
 
 	// Metrics goroutine: collects and sends MetricPayload every metricsInterval.
-	go c.metricsLoop(ctx, results)
+	go c.metricsLoop(streamCtx, results)
 
 	// Receiver: handles ServerMessage frames (execute_job, stream_logs, etc.).
 	for {
@@ -188,11 +200,27 @@ func (c *GRPCClient) connectStream(ctx context.Context, client pb.NodeAgentServi
 
 		switch p := msg.GetPayload().(type) {
 		case *pb.ServerMessage_ExecuteJob:
-			go c.handleJob(ctx, p.ExecuteJob, results)
+			go c.handleJob(streamCtx, p.ExecuteJob, results)
 		case *pb.ServerMessage_StreamLogs:
-			c.startLogStream(ctx, p.StreamLogs, results)
+			c.startLogStream(streamCtx, p.StreamLogs, results)
 		case *pb.ServerMessage_StopLogs:
 			c.stopLogStream()
+		case *pb.ServerMessage_ConfigureHealthCheck:
+			cfg := healthCheckConfig{
+				MonitorID:          p.ConfigureHealthCheck.GetMonitorId(),
+				ServiceName:        p.ConfigureHealthCheck.GetServiceName(),
+				CheckType:          p.ConfigureHealthCheck.GetCheckType(),
+				HTTPURL:            p.ConfigureHealthCheck.GetHttpUrl(),
+				HTTPExpectedStatus: int(p.ConfigureHealthCheck.GetHttpExpectedStatus()),
+				TCPHost:            p.ConfigureHealthCheck.GetTcpHost(),
+				TCPPort:            int(p.ConfigureHealthCheck.GetTcpPort()),
+				IntervalSeconds:    int(p.ConfigureHealthCheck.GetIntervalSeconds()),
+				FailureThreshold:   int(p.ConfigureHealthCheck.GetFailureThreshold()),
+				Enabled:            p.ConfigureHealthCheck.GetEnabled(),
+			}
+			c.healthMon.upsert(streamCtx, cfg, results)
+		case *pb.ServerMessage_StopHealthCheck:
+			c.healthMon.remove(p.StopHealthCheck.GetMonitorId())
 		default:
 			log.Printf("gRPC: unknown ServerMessage payload type %T", p)
 		}

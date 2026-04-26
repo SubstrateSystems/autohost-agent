@@ -145,3 +145,9 @@ func (c *Client) GetTokens() (accessToken, refreshToken string) {
 	defer c.mu.RUnlock()
 	return c.token, c.refreshToken
 }
+
+// ReportVersion notifies the API of the agent's current version.
+// Called once at startup so the frontend always reflects the running version.
+func (c *Client) ReportVersion(ctx context.Context, version string) error {
+	return c.post(ctx, EndpointVersionReport, map[string]string{"version": version})
+}

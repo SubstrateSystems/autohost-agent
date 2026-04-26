@@ -16,6 +16,7 @@ import (
 type Agent struct {
 	cfg             *Config
 	configPath      string
+	version         string
 	apiClient       *api.Client
 	grpcClient      *transport.GRPCClient
 	registry        *commands.Registry
@@ -26,7 +27,7 @@ type Agent struct {
 }
 
 // New creates and wires all agent subsystems.
-func New(cfg *Config) *Agent {
+func New(cfg *Config, version string) *Agent {
 	var apiClient *api.Client
 	if cfg.RefreshToken != "" {
 		apiClient = api.NewClientWithRefresh(cfg.APIURL, cfg.AgentToken, cfg.RefreshToken)
@@ -54,6 +55,7 @@ func New(cfg *Config) *Agent {
 	a := &Agent{
 		cfg:        cfg,
 		configPath: "/etc/autohost/config.yaml",
+		version:    version,
 		apiClient:  apiClient,
 		grpcClient: grpcClient,
 		registry:   registry,
@@ -67,6 +69,15 @@ func New(cfg *Config) *Agent {
 // metrics, and command reception internally.
 func (a *Agent) Run(ctx context.Context) error {
 	log.Printf("Agent starting — NodeID: %s, gRPC: %s", a.cfg.NodeID, a.cfg.GRPCAddress)
+
+	// Report version to the API on every startup so the frontend stays up to date.
+	if a.version != "" {
+		if err := a.apiClient.ReportVersion(ctx, a.version); err != nil {
+			log.Printf("⚠️  could not report version to API: %v", err)
+		} else {
+			log.Printf("✅ Version %s reported to API", a.version)
+		}
+	}
 
 	if a.cfg.GRPCAddress == "" {
 		log.Println("ℹ️  gRPC address not configured — agent is idle")
