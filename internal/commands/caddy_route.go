@@ -62,24 +62,28 @@ func (c *CaddyDeleteRoute) Execute(_ context.Context, payload map[string]any) er
 }
 
 // CaddyStatus reports whether Caddy is running and lists current routes.
-// No payload required.
+// No payload required. Implements CommandWithOutput so the JSON is captured
+// in the job result and visible to the frontend.
 type CaddyStatus struct{}
 
-func (c *CaddyStatus) Execute(_ context.Context, _ map[string]any) error {
+func (c *CaddyStatus) Execute(_ context.Context, payload map[string]any) error {
+	_, err := c.ExecuteWithOutput(context.Background(), payload)
+	return err
+}
+
+func (c *CaddyStatus) ExecuteWithOutput(_ context.Context, _ map[string]any) (string, error) {
 	if !caddyClient.IsRunning() {
-		fmt.Println("caddy_running=false")
-		return nil
+		return `{"caddy_running":false}`, nil
 	}
 
-	routes, err := caddyClient.ListRoutes()
+	routes, err := caddyClient.ListAllRoutes()
 	if err != nil {
-		return fmt.Errorf("caddy.status: %w", err)
+		return "", fmt.Errorf("caddy.status: %w", err)
 	}
 
 	out, _ := json.MarshalIndent(map[string]any{
 		"caddy_running": true,
 		"routes":        routes,
 	}, "", "  ")
-	fmt.Println(string(out))
-	return nil
+	return string(out), nil
 }

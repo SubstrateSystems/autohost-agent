@@ -67,8 +67,31 @@ type upstream struct {
 
 // Route is a simplified view of a Caddy reverse-proxy route.
 type Route struct {
-	Domain   string `json:"domain"`
+	Domain  string `json:"domain"`
 	Upstream string `json:"upstream"`
+	// Managed is true when the route was created by autohost (has the autohost- @id prefix).
+	Managed bool `json:"managed"`
+}
+
+// serverConfig is used to decode a single HTTP server from the Caddy config.
+type serverConfig struct {
+	Routes []caddyRoute `json:"routes"`
+}
+
+// extractUpstream walks a slice of handle blocks looking for the first
+// reverse_proxy handler (including inside nested subroute handles).
+func extractUpstream(handles []handleBlock) string {
+	for _, h := range handles {
+		if h.Handler == "reverse_proxy" && len(h.Upstreams) > 0 {
+			return h.Upstreams[0].Dial
+		}
+		for _, nested := range h.Routes {
+			if up := extractUpstream(nested.Handle); up != "" {
+				return up
+			}
+		}
+	}
+	return ""
 }
 
 func routeID(domain string) string {
@@ -131,39 +154,62 @@ func (c *Client) DeleteRoute(domain string) error {
 	return nil
 }
 
-// ListRoutes returns all autohost-managed routes currently in Caddy.
+// ListRoutes returns all autohost-managed routes currently in Caddy
+// (server "autohost", @id prefix "autohost-").
 func (c *Client) ListRoutes() ([]Route, error) {
-	resp, err := c.httpClient.Get(c.adminURL + "/config/apps/http/servers/autohost/routes")
+	all, err := c.ListAllRoutes()
 	if err != nil {
-		return nil, fmt.Errorf("get routes: %w", err)
+		return nil, err
+	}
+	var out []Route
+	for _, r := range all {
+		if r.Managed {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
+// ListAllRoutes returns every reverse-proxy route across all Caddy HTTP servers,
+// including routes defined in a Caddyfile (Managed=false) and those created by
+// autohost (Managed=true).
+func (c *Client) ListAllRoutes() ([]Route, error) {
+	resp, err := c.httpClient.Get(c.adminURL + "/config/apps/http/servers")
+	if err != nil {
+		return nil, fmt.Errorf("get servers: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusBadRequest {
 		return []Route{}, nil
 	}
 	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("list routes: status %d", resp.StatusCode)
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("list servers: status %d: %s", resp.StatusCode, string(b))
 	}
 
-	var routes []caddyRoute
-	if err := json.NewDecoder(resp.Body).Decode(&routes); err != nil {
-		return nil, fmt.Errorf("decode routes: %w", err)
+	var servers map[string]serverConfig
+	if err := json.NewDecoder(resp.Body).Decode(&servers); err != nil {
+		return nil, fmt.Errorf("decode servers: %w", err)
 	}
 
 	var out []Route
-	for _, r := range routes {
-		if !strings.HasPrefix(r.ID, routeIDPrefix) {
-			continue // skip routes not managed by autohost
+	for _, srv := range servers {
+		for _, r := range srv.Routes {
+			if len(r.Match) == 0 || len(r.Match[0].Host) == 0 {
+				continue
+			}
+			upstream := extractUpstream(r.Handle)
+			if upstream == "" {
+				continue // not a reverse proxy route
+			}
+			for _, host := range r.Match[0].Host {
+				out = append(out, Route{
+					Domain:   host,
+					Upstream: upstream,
+					Managed:  strings.HasPrefix(r.ID, routeIDPrefix),
+				})
+			}
 		}
-		if len(r.Match) == 0 || len(r.Match[0].Host) == 0 {
-			continue
-		}
-		domain := r.Match[0].Host[0]
-		dial := ""
-		if len(r.Handle) > 0 && len(r.Handle[0].Upstreams) > 0 {
-			dial = r.Handle[0].Upstreams[0].Dial
-		}
-		out = append(out, Route{Domain: domain, Upstream: dial})
 	}
 	return out, nil
 }
