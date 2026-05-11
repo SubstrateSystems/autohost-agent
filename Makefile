@@ -118,7 +118,7 @@ deploy-incus: build create-incus
 	@echo "  2. Start service:  incus exec $(INCUS_INSTANCE) -- sudo systemctl start autohost-agent"
 	@echo "  3. Check status:   make status-incus"
 
-deploy-incus-update: build
+update-incus: build
 	@echo "Updating Incus instance $(INCUS_INSTANCE)..."
 	@echo "1. Transferring new binary..."
 	incus file push $(BINARY_NAME) $(INCUS_INSTANCE)/home/ubuntu/

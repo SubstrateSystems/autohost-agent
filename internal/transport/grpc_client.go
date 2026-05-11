@@ -340,13 +340,15 @@ func (c *GRPCClient) handleJob(ctx context.Context, job *pb.ExecuteJobPayload, r
 	// Build optional payload from the proto params field.
 	// params is a JSON object string — unmarshal it so commands can access
 	// individual keys directly (e.g. payload["domain"]).
+	// Also keep the raw JSON string under "params" for commands that read it
+	// as a single blob (e.g. MarketplaceInstall).
 	var payload map[string]any
 	if p := job.GetParams(); p != "" {
 		if err := json.Unmarshal([]byte(p), &payload); err != nil {
-			// Fall back to wrapping it so the raw string is still accessible.
-			payload = map[string]any{"params": p}
+			payload = map[string]any{}
 			log.Printf("⚠️  gRPC job %s: could not parse params JSON: %v", job.GetJobId(), err)
 		}
+		payload["params"] = p // always expose raw JSON string
 	}
 
 	res := c.registry.Execute(ctx, job.GetCommandName(), payload)
