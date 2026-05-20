@@ -70,6 +70,53 @@ func (CommandType) EnumDescriptor() ([]byte, []int) {
 	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{0}
 }
 
+// ProfileType selects what the agent should sample.
+type ProfileType int32
+
+const (
+	ProfileType_PROFILE_TYPE_HEAP ProfileType = 0 // Heap / memory allocation snapshot (instantaneous)
+	ProfileType_PROFILE_TYPE_CPU  ProfileType = 1 // CPU sampling for duration_seconds
+)
+
+// Enum value maps for ProfileType.
+var (
+	ProfileType_name = map[int32]string{
+		0: "PROFILE_TYPE_HEAP",
+		1: "PROFILE_TYPE_CPU",
+	}
+	ProfileType_value = map[string]int32{
+		"PROFILE_TYPE_HEAP": 0,
+		"PROFILE_TYPE_CPU":  1,
+	}
+)
+
+func (x ProfileType) Enum() *ProfileType {
+	p := new(ProfileType)
+	*p = x
+	return p
+}
+
+func (x ProfileType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ProfileType) Descriptor() protoreflect.EnumDescriptor {
+	return file_proto_node_agent_v1_node_agent_proto_enumTypes[1].Descriptor()
+}
+
+func (ProfileType) Type() protoreflect.EnumType {
+	return &file_proto_node_agent_v1_node_agent_proto_enumTypes[1]
+}
+
+func (x ProfileType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ProfileType.Descriptor instead.
+func (ProfileType) EnumDescriptor() ([]byte, []int) {
+	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{1}
+}
+
 type JobStatus int32
 
 const (
@@ -103,11 +150,11 @@ func (x JobStatus) String() string {
 }
 
 func (JobStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_node_agent_v1_node_agent_proto_enumTypes[1].Descriptor()
+	return file_proto_node_agent_v1_node_agent_proto_enumTypes[2].Descriptor()
 }
 
 func (JobStatus) Type() protoreflect.EnumType {
-	return &file_proto_node_agent_v1_node_agent_proto_enumTypes[1]
+	return &file_proto_node_agent_v1_node_agent_proto_enumTypes[2]
 }
 
 func (x JobStatus) Number() protoreflect.EnumNumber {
@@ -116,7 +163,7 @@ func (x JobStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use JobStatus.Descriptor instead.
 func (JobStatus) EnumDescriptor() ([]byte, []int) {
-	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{1}
+	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{2}
 }
 
 type RegisterCommandRequest struct {
@@ -248,6 +295,7 @@ type NodeMessage struct {
 	//	*NodeMessage_LogEntry
 	//	*NodeMessage_Metric
 	//	*NodeMessage_HealthResult
+	//	*NodeMessage_ProfileData
 	Payload       isNodeMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -335,6 +383,15 @@ func (x *NodeMessage) GetHealthResult() *HealthCheckResultPayload {
 	return nil
 }
 
+func (x *NodeMessage) GetProfileData() *ProfileDataPayload {
+	if x != nil {
+		if x, ok := x.Payload.(*NodeMessage_ProfileData); ok {
+			return x.ProfileData
+		}
+	}
+	return nil
+}
+
 type isNodeMessage_Payload interface {
 	isNodeMessage_Payload()
 }
@@ -359,6 +416,10 @@ type NodeMessage_HealthResult struct {
 	HealthResult *HealthCheckResultPayload `protobuf:"bytes,5,opt,name=health_result,json=healthResult,proto3,oneof"`
 }
 
+type NodeMessage_ProfileData struct {
+	ProfileData *ProfileDataPayload `protobuf:"bytes,6,opt,name=profile_data,json=profileData,proto3,oneof"`
+}
+
 func (*NodeMessage_JobResult) isNodeMessage_Payload() {}
 
 func (*NodeMessage_Heartbeat) isNodeMessage_Payload() {}
@@ -368,6 +429,8 @@ func (*NodeMessage_LogEntry) isNodeMessage_Payload() {}
 func (*NodeMessage_Metric) isNodeMessage_Payload() {}
 
 func (*NodeMessage_HealthResult) isNodeMessage_Payload() {}
+
+func (*NodeMessage_ProfileData) isNodeMessage_Payload() {}
 
 type MetricPayload struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
@@ -494,6 +557,7 @@ type ServerMessage struct {
 	//	*ServerMessage_StopLogs
 	//	*ServerMessage_ConfigureHealthCheck
 	//	*ServerMessage_StopHealthCheck
+	//	*ServerMessage_RequestProfile
 	Payload       isServerMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -581,6 +645,15 @@ func (x *ServerMessage) GetStopHealthCheck() *StopHealthCheckPayload {
 	return nil
 }
 
+func (x *ServerMessage) GetRequestProfile() *RequestProfilePayload {
+	if x != nil {
+		if x, ok := x.Payload.(*ServerMessage_RequestProfile); ok {
+			return x.RequestProfile
+		}
+	}
+	return nil
+}
+
 type isServerMessage_Payload interface {
 	isServerMessage_Payload()
 }
@@ -605,6 +678,10 @@ type ServerMessage_StopHealthCheck struct {
 	StopHealthCheck *StopHealthCheckPayload `protobuf:"bytes,5,opt,name=stop_health_check,json=stopHealthCheck,proto3,oneof"`
 }
 
+type ServerMessage_RequestProfile struct {
+	RequestProfile *RequestProfilePayload `protobuf:"bytes,6,opt,name=request_profile,json=requestProfile,proto3,oneof"`
+}
+
 func (*ServerMessage_ExecuteJob) isServerMessage_Payload() {}
 
 func (*ServerMessage_StreamLogs) isServerMessage_Payload() {}
@@ -614,6 +691,8 @@ func (*ServerMessage_StopLogs) isServerMessage_Payload() {}
 func (*ServerMessage_ConfigureHealthCheck) isServerMessage_Payload() {}
 
 func (*ServerMessage_StopHealthCheck) isServerMessage_Payload() {}
+
+func (*ServerMessage_RequestProfile) isServerMessage_Payload() {}
 
 type JobResultPayload struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1185,6 +1264,136 @@ func (x *HealthCheckResultPayload) GetConsecutiveFailures() int32 {
 	return 0
 }
 
+// Sent by server to ask the agent to collect a pprof profile.
+type RequestProfilePayload struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	RequestId       string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"` // correlation ID (UUID)
+	ProfileType     ProfileType            `protobuf:"varint,2,opt,name=profile_type,json=profileType,proto3,enum=node_agent.v1.ProfileType" json:"profile_type,omitempty"`
+	DurationSeconds int32                  `protobuf:"varint,3,opt,name=duration_seconds,json=durationSeconds,proto3" json:"duration_seconds,omitempty"` // only relevant for PROFILE_TYPE_CPU (0 → 30 s default)
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *RequestProfilePayload) Reset() {
+	*x = RequestProfilePayload{}
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestProfilePayload) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestProfilePayload) ProtoMessage() {}
+
+func (x *RequestProfilePayload) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestProfilePayload.ProtoReflect.Descriptor instead.
+func (*RequestProfilePayload) Descriptor() ([]byte, []int) {
+	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *RequestProfilePayload) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *RequestProfilePayload) GetProfileType() ProfileType {
+	if x != nil {
+		return x.ProfileType
+	}
+	return ProfileType_PROFILE_TYPE_HEAP
+}
+
+func (x *RequestProfilePayload) GetDurationSeconds() int32 {
+	if x != nil {
+		return x.DurationSeconds
+	}
+	return 0
+}
+
+// Sent by agent to deliver the raw pprof bytes back to the server.
+type ProfileDataPayload struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"` // matches RequestProfilePayload.request_id
+	ProfileType   ProfileType            `protobuf:"varint,2,opt,name=profile_type,json=profileType,proto3,enum=node_agent.v1.ProfileType" json:"profile_type,omitempty"`
+	Data          []byte                 `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`   // raw pprof binary (pprof.WriteHeapProfile / StopCPUProfile output)
+	Error         string                 `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"` // non-empty when collection failed
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProfileDataPayload) Reset() {
+	*x = ProfileDataPayload{}
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProfileDataPayload) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProfileDataPayload) ProtoMessage() {}
+
+func (x *ProfileDataPayload) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProfileDataPayload.ProtoReflect.Descriptor instead.
+func (*ProfileDataPayload) Descriptor() ([]byte, []int) {
+	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ProfileDataPayload) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ProfileDataPayload) GetProfileType() ProfileType {
+	if x != nil {
+		return x.ProfileType
+	}
+	return ProfileType_PROFILE_TYPE_HEAP
+}
+
+func (x *ProfileDataPayload) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+func (x *ProfileDataPayload) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
 type MetricRequest struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	CpuUsagePercent    float32                `protobuf:"fixed32,1,opt,name=cpu_usage_percent,json=cpuUsagePercent,proto3" json:"cpu_usage_percent,omitempty"`
@@ -1203,7 +1412,7 @@ type MetricRequest struct {
 
 func (x *MetricRequest) Reset() {
 	*x = MetricRequest{}
-	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[14]
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1215,7 +1424,7 @@ func (x *MetricRequest) String() string {
 func (*MetricRequest) ProtoMessage() {}
 
 func (x *MetricRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[14]
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1228,7 +1437,7 @@ func (x *MetricRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetricRequest.ProtoReflect.Descriptor instead.
 func (*MetricRequest) Descriptor() ([]byte, []int) {
-	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{14}
+	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *MetricRequest) GetCpuUsagePercent() float32 {
@@ -1310,7 +1519,7 @@ type MetricResponse struct {
 
 func (x *MetricResponse) Reset() {
 	*x = MetricResponse{}
-	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[15]
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1322,7 +1531,7 @@ func (x *MetricResponse) String() string {
 func (*MetricResponse) ProtoMessage() {}
 
 func (x *MetricResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[15]
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1335,7 +1544,7 @@ func (x *MetricResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetricResponse.ProtoReflect.Descriptor instead.
 func (*MetricResponse) Descriptor() ([]byte, []int) {
-	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{15}
+	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *MetricResponse) GetSuccess() bool {
@@ -1360,14 +1569,15 @@ const file_proto_node_agent_v1_node_agent_proto_rawDesc = "" +
 	"\x18RegisterCommandsResponse\x12\x1e\n" +
 	"\n" +
 	"registered\x18\x01 \x01(\x05R\n" +
-	"registered\"\xe2\x02\n" +
+	"registered\"\xaa\x03\n" +
 	"\vNodeMessage\x12@\n" +
 	"\n" +
 	"job_result\x18\x01 \x01(\v2\x1f.node_agent.v1.JobResultPayloadH\x00R\tjobResult\x12?\n" +
 	"\theartbeat\x18\x02 \x01(\v2\x1f.node_agent.v1.HeartbeatPayloadH\x00R\theartbeat\x12=\n" +
 	"\tlog_entry\x18\x03 \x01(\v2\x1e.node_agent.v1.LogEntryPayloadH\x00R\blogEntry\x126\n" +
 	"\x06metric\x18\x04 \x01(\v2\x1c.node_agent.v1.MetricPayloadH\x00R\x06metric\x12N\n" +
-	"\rhealth_result\x18\x05 \x01(\v2'.node_agent.v1.HealthCheckResultPayloadH\x00R\fhealthResultB\t\n" +
+	"\rhealth_result\x18\x05 \x01(\v2'.node_agent.v1.HealthCheckResultPayloadH\x00R\fhealthResult\x12F\n" +
+	"\fprofile_data\x18\x06 \x01(\v2!.node_agent.v1.ProfileDataPayloadH\x00R\vprofileDataB\t\n" +
 	"\apayload\"\xbe\x03\n" +
 	"\rMetricPayload\x12*\n" +
 	"\x11cpu_usage_percent\x18\x01 \x01(\x02R\x0fcpuUsagePercent\x12&\n" +
@@ -1380,7 +1590,7 @@ const file_proto_node_agent_v1_node_agent_proto_rawDesc = "" +
 	"\x14disk_available_bytes\x18\b \x01(\x04R\x12diskAvailableBytes\x12,\n" +
 	"\x12disk_usage_percent\x18\t \x01(\x02R\x10diskUsagePercent\x12%\n" +
 	"\x0euptime_seconds\x18\n" +
-	" \x01(\x03R\ruptimeSeconds\"\x9c\x03\n" +
+	" \x01(\x03R\ruptimeSeconds\"\xed\x03\n" +
 	"\rServerMessage\x12C\n" +
 	"\vexecute_job\x18\x01 \x01(\v2 .node_agent.v1.ExecuteJobPayloadH\x00R\n" +
 	"executeJob\x12C\n" +
@@ -1388,7 +1598,8 @@ const file_proto_node_agent_v1_node_agent_proto_rawDesc = "" +
 	"streamLogs\x12=\n" +
 	"\tstop_logs\x18\x03 \x01(\v2\x1e.node_agent.v1.StopLogsPayloadH\x00R\bstopLogs\x12b\n" +
 	"\x16configure_health_check\x18\x04 \x01(\v2*.node_agent.v1.ConfigureHealthCheckPayloadH\x00R\x14configureHealthCheck\x12S\n" +
-	"\x11stop_health_check\x18\x05 \x01(\v2%.node_agent.v1.StopHealthCheckPayloadH\x00R\x0fstopHealthCheckB\t\n" +
+	"\x11stop_health_check\x18\x05 \x01(\v2%.node_agent.v1.StopHealthCheckPayloadH\x00R\x0fstopHealthCheck\x12O\n" +
+	"\x0frequest_profile\x18\x06 \x01(\v2$.node_agent.v1.RequestProfilePayloadH\x00R\x0erequestProfileB\t\n" +
 	"\apayload\"\x89\x01\n" +
 	"\x10JobResultPayload\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x120\n" +
@@ -1434,7 +1645,18 @@ const file_proto_node_agent_v1_node_agent_proto_rawDesc = "" +
 	"\n" +
 	"latency_ms\x18\x03 \x01(\x05R\tlatencyMs\x12\x18\n" +
 	"\amessage\x18\x04 \x01(\tR\amessage\x121\n" +
-	"\x14consecutive_failures\x18\x05 \x01(\x05R\x13consecutiveFailures\"\xbe\x03\n" +
+	"\x14consecutive_failures\x18\x05 \x01(\x05R\x13consecutiveFailures\"\xa0\x01\n" +
+	"\x15RequestProfilePayload\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12=\n" +
+	"\fprofile_type\x18\x02 \x01(\x0e2\x1a.node_agent.v1.ProfileTypeR\vprofileType\x12)\n" +
+	"\x10duration_seconds\x18\x03 \x01(\x05R\x0fdurationSeconds\"\x9c\x01\n" +
+	"\x12ProfileDataPayload\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12=\n" +
+	"\fprofile_type\x18\x02 \x01(\x0e2\x1a.node_agent.v1.ProfileTypeR\vprofileType\x12\x12\n" +
+	"\x04data\x18\x03 \x01(\fR\x04data\x12\x14\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error\"\xbe\x03\n" +
 	"\rMetricRequest\x12*\n" +
 	"\x11cpu_usage_percent\x18\x01 \x01(\x02R\x0fcpuUsagePercent\x12&\n" +
 	"\x0fram_total_bytes\x18\x02 \x01(\x04R\rramTotalBytes\x12$\n" +
@@ -1452,7 +1674,10 @@ const file_proto_node_agent_v1_node_agent_proto_rawDesc = "" +
 	"\vCommandType\x12\x18\n" +
 	"\x14COMMAND_TYPE_DEFAULT\x10\x00\x12\x17\n" +
 	"\x13COMMAND_TYPE_CUSTOM\x10\x01\x12\x1c\n" +
-	"\x18COMMAND_TYPE_INSTALL_APP\x10\x02*T\n" +
+	"\x18COMMAND_TYPE_INSTALL_APP\x10\x02*:\n" +
+	"\vProfileType\x12\x15\n" +
+	"\x11PROFILE_TYPE_HEAP\x10\x00\x12\x14\n" +
+	"\x10PROFILE_TYPE_CPU\x10\x01*T\n" +
 	"\tJobStatus\x12\x16\n" +
 	"\x12JOB_STATUS_RUNNING\x10\x00\x12\x18\n" +
 	"\x14JOB_STATUS_COMPLETED\x10\x01\x12\x15\n" +
@@ -1474,53 +1699,60 @@ func file_proto_node_agent_v1_node_agent_proto_rawDescGZIP() []byte {
 	return file_proto_node_agent_v1_node_agent_proto_rawDescData
 }
 
-var file_proto_node_agent_v1_node_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_proto_node_agent_v1_node_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_proto_node_agent_v1_node_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_proto_node_agent_v1_node_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_proto_node_agent_v1_node_agent_proto_goTypes = []any{
 	(CommandType)(0),                    // 0: node_agent.v1.CommandType
-	(JobStatus)(0),                      // 1: node_agent.v1.JobStatus
-	(*RegisterCommandRequest)(nil),      // 2: node_agent.v1.RegisterCommandRequest
-	(*RegisterCommandsResponse)(nil),    // 3: node_agent.v1.RegisterCommandsResponse
-	(*NodeMessage)(nil),                 // 4: node_agent.v1.NodeMessage
-	(*MetricPayload)(nil),               // 5: node_agent.v1.MetricPayload
-	(*ServerMessage)(nil),               // 6: node_agent.v1.ServerMessage
-	(*JobResultPayload)(nil),            // 7: node_agent.v1.JobResultPayload
-	(*HeartbeatPayload)(nil),            // 8: node_agent.v1.HeartbeatPayload
-	(*ExecuteJobPayload)(nil),           // 9: node_agent.v1.ExecuteJobPayload
-	(*StreamLogsPayload)(nil),           // 10: node_agent.v1.StreamLogsPayload
-	(*StopLogsPayload)(nil),             // 11: node_agent.v1.StopLogsPayload
-	(*LogEntryPayload)(nil),             // 12: node_agent.v1.LogEntryPayload
-	(*ConfigureHealthCheckPayload)(nil), // 13: node_agent.v1.ConfigureHealthCheckPayload
-	(*StopHealthCheckPayload)(nil),      // 14: node_agent.v1.StopHealthCheckPayload
-	(*HealthCheckResultPayload)(nil),    // 15: node_agent.v1.HealthCheckResultPayload
-	(*MetricRequest)(nil),               // 16: node_agent.v1.MetricRequest
-	(*MetricResponse)(nil),              // 17: node_agent.v1.MetricResponse
+	(ProfileType)(0),                    // 1: node_agent.v1.ProfileType
+	(JobStatus)(0),                      // 2: node_agent.v1.JobStatus
+	(*RegisterCommandRequest)(nil),      // 3: node_agent.v1.RegisterCommandRequest
+	(*RegisterCommandsResponse)(nil),    // 4: node_agent.v1.RegisterCommandsResponse
+	(*NodeMessage)(nil),                 // 5: node_agent.v1.NodeMessage
+	(*MetricPayload)(nil),               // 6: node_agent.v1.MetricPayload
+	(*ServerMessage)(nil),               // 7: node_agent.v1.ServerMessage
+	(*JobResultPayload)(nil),            // 8: node_agent.v1.JobResultPayload
+	(*HeartbeatPayload)(nil),            // 9: node_agent.v1.HeartbeatPayload
+	(*ExecuteJobPayload)(nil),           // 10: node_agent.v1.ExecuteJobPayload
+	(*StreamLogsPayload)(nil),           // 11: node_agent.v1.StreamLogsPayload
+	(*StopLogsPayload)(nil),             // 12: node_agent.v1.StopLogsPayload
+	(*LogEntryPayload)(nil),             // 13: node_agent.v1.LogEntryPayload
+	(*ConfigureHealthCheckPayload)(nil), // 14: node_agent.v1.ConfigureHealthCheckPayload
+	(*StopHealthCheckPayload)(nil),      // 15: node_agent.v1.StopHealthCheckPayload
+	(*HealthCheckResultPayload)(nil),    // 16: node_agent.v1.HealthCheckResultPayload
+	(*RequestProfilePayload)(nil),       // 17: node_agent.v1.RequestProfilePayload
+	(*ProfileDataPayload)(nil),          // 18: node_agent.v1.ProfileDataPayload
+	(*MetricRequest)(nil),               // 19: node_agent.v1.MetricRequest
+	(*MetricResponse)(nil),              // 20: node_agent.v1.MetricResponse
 }
 var file_proto_node_agent_v1_node_agent_proto_depIdxs = []int32{
 	0,  // 0: node_agent.v1.RegisterCommandRequest.type:type_name -> node_agent.v1.CommandType
-	7,  // 1: node_agent.v1.NodeMessage.job_result:type_name -> node_agent.v1.JobResultPayload
-	8,  // 2: node_agent.v1.NodeMessage.heartbeat:type_name -> node_agent.v1.HeartbeatPayload
-	12, // 3: node_agent.v1.NodeMessage.log_entry:type_name -> node_agent.v1.LogEntryPayload
-	5,  // 4: node_agent.v1.NodeMessage.metric:type_name -> node_agent.v1.MetricPayload
-	15, // 5: node_agent.v1.NodeMessage.health_result:type_name -> node_agent.v1.HealthCheckResultPayload
-	9,  // 6: node_agent.v1.ServerMessage.execute_job:type_name -> node_agent.v1.ExecuteJobPayload
-	10, // 7: node_agent.v1.ServerMessage.stream_logs:type_name -> node_agent.v1.StreamLogsPayload
-	11, // 8: node_agent.v1.ServerMessage.stop_logs:type_name -> node_agent.v1.StopLogsPayload
-	13, // 9: node_agent.v1.ServerMessage.configure_health_check:type_name -> node_agent.v1.ConfigureHealthCheckPayload
-	14, // 10: node_agent.v1.ServerMessage.stop_health_check:type_name -> node_agent.v1.StopHealthCheckPayload
-	1,  // 11: node_agent.v1.JobResultPayload.status:type_name -> node_agent.v1.JobStatus
-	0,  // 12: node_agent.v1.ExecuteJobPayload.command_type:type_name -> node_agent.v1.CommandType
-	2,  // 13: node_agent.v1.NodeAgentService.RegisterCommands:input_type -> node_agent.v1.RegisterCommandRequest
-	4,  // 14: node_agent.v1.NodeAgentService.Connect:input_type -> node_agent.v1.NodeMessage
-	16, // 15: node_agent.v1.NodeAgentService.ReportMetrics:input_type -> node_agent.v1.MetricRequest
-	3,  // 16: node_agent.v1.NodeAgentService.RegisterCommands:output_type -> node_agent.v1.RegisterCommandsResponse
-	6,  // 17: node_agent.v1.NodeAgentService.Connect:output_type -> node_agent.v1.ServerMessage
-	17, // 18: node_agent.v1.NodeAgentService.ReportMetrics:output_type -> node_agent.v1.MetricResponse
-	16, // [16:19] is the sub-list for method output_type
-	13, // [13:16] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	8,  // 1: node_agent.v1.NodeMessage.job_result:type_name -> node_agent.v1.JobResultPayload
+	9,  // 2: node_agent.v1.NodeMessage.heartbeat:type_name -> node_agent.v1.HeartbeatPayload
+	13, // 3: node_agent.v1.NodeMessage.log_entry:type_name -> node_agent.v1.LogEntryPayload
+	6,  // 4: node_agent.v1.NodeMessage.metric:type_name -> node_agent.v1.MetricPayload
+	16, // 5: node_agent.v1.NodeMessage.health_result:type_name -> node_agent.v1.HealthCheckResultPayload
+	18, // 6: node_agent.v1.NodeMessage.profile_data:type_name -> node_agent.v1.ProfileDataPayload
+	10, // 7: node_agent.v1.ServerMessage.execute_job:type_name -> node_agent.v1.ExecuteJobPayload
+	11, // 8: node_agent.v1.ServerMessage.stream_logs:type_name -> node_agent.v1.StreamLogsPayload
+	12, // 9: node_agent.v1.ServerMessage.stop_logs:type_name -> node_agent.v1.StopLogsPayload
+	14, // 10: node_agent.v1.ServerMessage.configure_health_check:type_name -> node_agent.v1.ConfigureHealthCheckPayload
+	15, // 11: node_agent.v1.ServerMessage.stop_health_check:type_name -> node_agent.v1.StopHealthCheckPayload
+	17, // 12: node_agent.v1.ServerMessage.request_profile:type_name -> node_agent.v1.RequestProfilePayload
+	2,  // 13: node_agent.v1.JobResultPayload.status:type_name -> node_agent.v1.JobStatus
+	0,  // 14: node_agent.v1.ExecuteJobPayload.command_type:type_name -> node_agent.v1.CommandType
+	1,  // 15: node_agent.v1.RequestProfilePayload.profile_type:type_name -> node_agent.v1.ProfileType
+	1,  // 16: node_agent.v1.ProfileDataPayload.profile_type:type_name -> node_agent.v1.ProfileType
+	3,  // 17: node_agent.v1.NodeAgentService.RegisterCommands:input_type -> node_agent.v1.RegisterCommandRequest
+	5,  // 18: node_agent.v1.NodeAgentService.Connect:input_type -> node_agent.v1.NodeMessage
+	19, // 19: node_agent.v1.NodeAgentService.ReportMetrics:input_type -> node_agent.v1.MetricRequest
+	4,  // 20: node_agent.v1.NodeAgentService.RegisterCommands:output_type -> node_agent.v1.RegisterCommandsResponse
+	7,  // 21: node_agent.v1.NodeAgentService.Connect:output_type -> node_agent.v1.ServerMessage
+	20, // 22: node_agent.v1.NodeAgentService.ReportMetrics:output_type -> node_agent.v1.MetricResponse
+	20, // [20:23] is the sub-list for method output_type
+	17, // [17:20] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_proto_node_agent_v1_node_agent_proto_init() }
@@ -1534,6 +1766,7 @@ func file_proto_node_agent_v1_node_agent_proto_init() {
 		(*NodeMessage_LogEntry)(nil),
 		(*NodeMessage_Metric)(nil),
 		(*NodeMessage_HealthResult)(nil),
+		(*NodeMessage_ProfileData)(nil),
 	}
 	file_proto_node_agent_v1_node_agent_proto_msgTypes[4].OneofWrappers = []any{
 		(*ServerMessage_ExecuteJob)(nil),
@@ -1541,14 +1774,15 @@ func file_proto_node_agent_v1_node_agent_proto_init() {
 		(*ServerMessage_StopLogs)(nil),
 		(*ServerMessage_ConfigureHealthCheck)(nil),
 		(*ServerMessage_StopHealthCheck)(nil),
+		(*ServerMessage_RequestProfile)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_node_agent_v1_node_agent_proto_rawDesc), len(file_proto_node_agent_v1_node_agent_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   16,
+			NumEnums:      3,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

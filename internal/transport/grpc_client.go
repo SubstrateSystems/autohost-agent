@@ -222,6 +222,8 @@ func (c *GRPCClient) connectStream(ctx context.Context, client pb.NodeAgentServi
 			c.healthMon.upsert(streamCtx, cfg, results)
 		case *pb.ServerMessage_StopHealthCheck:
 			c.healthMon.remove(p.StopHealthCheck.GetMonitorId())
+		case *pb.ServerMessage_RequestProfile:
+			go c.handleProfileRequest(streamCtx, p.RequestProfile, results)
 		default:
 			log.Printf("gRPC: unknown ServerMessage payload type %T", p)
 		}
