@@ -36,6 +36,9 @@ type GRPCClient struct {
 	logMu     sync.Mutex
 	logCancel context.CancelFunc // non-nil while log streaming is active
 
+	containerMu     sync.Mutex
+	containerCancel context.CancelFunc // non-nil while container streaming is active
+
 	healthMon *healthMonitor
 }
 
@@ -157,6 +160,7 @@ func (c *GRPCClient) connectStream(ctx context.Context, client pb.NodeAgentServi
 	defer func() {
 		streamCancel()
 		c.healthMon.stopAll()
+		c.stopContainerStream()
 	}()
 
 	// Buffered channel so goroutines don't block on slow sends.
@@ -206,6 +210,10 @@ func (c *GRPCClient) connectStream(ctx context.Context, client pb.NodeAgentServi
 			c.startLogStream(streamCtx, p.StreamLogs, results)
 		case *pb.ServerMessage_StopLogs:
 			c.stopLogStream()
+		case *pb.ServerMessage_StreamContainers:
+			c.startContainerStream(streamCtx, results)
+		case *pb.ServerMessage_StopContainers:
+			c.stopContainerStream()
 		case *pb.ServerMessage_ConfigureHealthCheck:
 			cfg := healthCheckConfig{
 				MonitorID:          p.ConfigureHealthCheck.GetMonitorId(),

@@ -61,17 +61,24 @@ func (c *GRPCClient) streamDockerLogs(logCtx context.Context, cancel context.Can
 		log.Printf("📋 docker log stream started (container=%q lines=%d firstRun=%v)", containerName, histLines, firstRun)
 		firstRun = false
 
+		// iterCtx is cancelled when either this iteration ends or the outer
+		// logCtx is cancelled. Using a per-iteration context prevents goroutine
+		// accumulation across retries (e.g. when a container repeatedly restarts).
+		iterCtx, iterCancel := context.WithCancel(logCtx)
+
 		// Close the write end once the process finishes so the scanner exits.
+		// Also cancel iterCtx so the pr-close goroutine below exits promptly.
 		go func() {
 			cmd.Wait()
 			pw.Close()
+			iterCancel()
 		}()
 
-		// Guarantee scanner.Scan() unblocks quickly when context is cancelled:
+		// Guarantee scanner.Scan() unblocks quickly when this iteration ends:
 		// close the read end of the pipe directly so that the blocking Scan()
 		// call returns EOF without waiting for the process kill → Wait → pw.Close() chain.
 		go func() {
-			<-logCtx.Done()
+			<-iterCtx.Done()
 			pr.Close()
 		}()
 
@@ -98,6 +105,7 @@ func (c *GRPCClient) streamDockerLogs(logCtx context.Context, cancel context.Can
 			}
 		}
 		pr.Close()
+		iterCancel() // ensure the pr-close goroutine exits before next iteration
 
 		if logCtx.Err() != nil {
 			log.Printf("📋 docker log stream stopped (container=%q)", containerName)

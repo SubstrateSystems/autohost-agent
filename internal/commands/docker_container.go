@@ -89,6 +89,48 @@ type containerInfo struct {
 	MemPerc string `json:"memPerc,omitempty"`
 }
 
+// ContainerEntry is the public version of containerInfo used by the transport
+// layer to construct proto messages without going through JSON marshaling.
+type ContainerEntry struct {
+	ID      string
+	Name    string
+	Image   string
+	State   string
+	Status  string
+	CPU     string
+	Mem     string
+	MemPerc string
+}
+
+// ContainerSnapshotResult is returned by ContainerListSnapshot.
+type ContainerSnapshotResult struct {
+	Containers []ContainerEntry
+	Err        error
+}
+
+// ContainerListSnapshot returns the current container list as a Go struct
+// suitable for direct proto conversion, without JSON marshaling.
+func ContainerListSnapshot(ctx context.Context) ContainerSnapshotResult {
+	raw, err := containerListRaw(ctx)
+	if err != nil {
+		return ContainerSnapshotResult{Err: err}
+	}
+	entries := make([]ContainerEntry, 0, len(raw))
+	for _, c := range raw {
+		entries = append(entries, ContainerEntry{
+			ID:      c.ID,
+			Name:    c.Name,
+			Image:   c.Image,
+			State:   c.State,
+			Status:  c.Status,
+			CPU:     c.CPU,
+			Mem:     c.Mem,
+			MemPerc: c.MemPerc,
+		})
+	}
+	return ContainerSnapshotResult{Containers: entries}
+}
+
 // rawStats is used to parse the JSON output of docker stats.
 type rawStats struct {
 	Name    string `json:"name"`
@@ -97,18 +139,17 @@ type rawStats struct {
 	MemPerc string `json:"memPerc"`
 }
 
-// containerList runs docker ps -a and merges live stats (cpu, mem, memPerc)
-// for running containers via docker stats --no-stream. Returns a JSON array.
-func containerList(ctx context.Context) ExecuteResult {
+// containerListRaw runs docker ps + docker stats and returns the raw struct
+// slice.  It is the shared core used by both containerList (JSON output for
+// jobs) and ContainerListSnapshot (struct output for gRPC streaming).
+func containerListRaw(ctx context.Context) ([]containerInfo, error) {
 	psCmd := exec.CommandContext(ctx, "docker", "ps", "-a",
 		"--format", "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.State}}\t{{.Status}}")
 	psOut, err := psCmd.Output()
 	if err != nil {
-		return ExecuteResult{Err: fmt.Errorf("docker ps: %w", err)}
+		return nil, fmt.Errorf("docker ps: %w", err)
 	}
 
-	// Use a JSON format template to avoid ambiguity with tab/space in values.
-	// Docker container names cannot contain '"', so the JSON is always valid.
 	statsMap := map[string]rawStats{}
 	statsCmd := exec.CommandContext(ctx, "docker", "stats", "--no-stream",
 		"--format", `{"name":"{{.Name}}","cpu":"{{.CPUPerc}}","mem":"{{.MemUsage}}","memPerc":"{{.MemPerc}}"}`)
@@ -120,7 +161,6 @@ func containerList(ctx context.Context) ExecuteResult {
 			}
 			var s rawStats
 			if jsonErr := json.Unmarshal([]byte(line), &s); jsonErr == nil && s.Name != "" {
-				// Docker may prefix names with "/" — normalise for consistent lookup.
 				statsMap[strings.TrimPrefix(s.Name, "/")] = s
 			}
 		}
@@ -149,6 +189,16 @@ func containerList(ctx context.Context) ExecuteResult {
 			c.MemPerc = s.MemPerc
 		}
 		result = append(result, c)
+	}
+	return result, nil
+}
+
+// containerList runs docker ps -a and merges live stats (cpu, mem, memPerc)
+// for running containers via docker stats --no-stream. Returns a JSON array.
+func containerList(ctx context.Context) ExecuteResult {
+	result, err := containerListRaw(ctx)
+	if err != nil {
+		return ExecuteResult{Err: err}
 	}
 
 	if len(result) == 0 {
