@@ -35,6 +35,7 @@ type GRPCClient struct {
 
 	logMu     sync.Mutex
 	logCancel context.CancelFunc // non-nil while log streaming is active
+	logDone   <-chan struct{}    // closed when the active log goroutine exits
 
 	containerMu     sync.Mutex
 	containerCancel context.CancelFunc // non-nil while container streaming is active
@@ -235,7 +236,12 @@ func (c *GRPCClient) connectStream(ctx context.Context, client pb.NodeAgentServi
 		}
 	}
 
-	close(results)
+	// Cancel the stream context BEFORE closing the results channel so that
+	// heartbeatLoop and metricsLoop stop trying to send. Sending to a closed
+	// channel panics even inside a select-with-default, so we must guarantee
+	// those goroutines have received the cancellation signal first.
+	// streamCancel is idempotent; the deferred call below is a no-op after this.
+	streamCancel()
 	<-sendDone
 	return nil
 }

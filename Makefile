@@ -37,7 +37,8 @@ release:
 	echo "✅ Artefactos en dist/"; \
 	ls -lh dist/; \
 	echo ""; \
-	echo "💡 Para publicar el tag ejecuta: git push origin $$NEW_VERSION"
+	git push origin "$$NEW_VERSION"; \
+	echo "🎉 Release $$NEW_VERSION creada y subida a GitHub"; \
 
 
 
