@@ -95,6 +95,7 @@ func (c *GRPCClient) streamJournalctlLogs(logCtx context.Context, cancel context
 				}},
 			}:
 			case <-logCtx.Done():
+				iterCancel()
 				cmd.Process.Kill()
 				return
 			default:
