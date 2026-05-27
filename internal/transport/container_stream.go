@@ -92,6 +92,11 @@ func (c *GRPCClient) runContainerStream(ctx context.Context, cancel context.Canc
 	debounceTimer.Stop() // starts paused
 	defer debounceTimer.Stop()
 
+	// Periodic ticker so CPU/mem stats refresh even when no lifecycle events occur.
+	const periodicInterval = 15 * time.Second
+	ticker := time.NewTicker(periodicInterval)
+	defer ticker.Stop()
+
 	pending := false
 
 	for {
@@ -111,6 +116,9 @@ func (c *GRPCClient) runContainerStream(ctx context.Context, cancel context.Canc
 
 		case <-debounceTimer.C:
 			pending = false
+			c.sendContainerSnapshot(ctx, out)
+
+		case <-ticker.C:
 			c.sendContainerSnapshot(ctx, out)
 		}
 	}
