@@ -39,53 +39,18 @@ func (c *GRPCClient) stopContainerStream() {
 }
 
 // runContainerStream is the goroutine body for container streaming.
-// It sends the initial snapshot, then subscribes to `docker events` and
-// re-sends a fresh snapshot after each event (debounced by 500 ms to handle
-// rapid sequences like stop+destroy).
+// It sends an initial snapshot then keeps pushing updates:
+//   - every periodicInterval (ticker) to refresh CPU/mem stats, and
+//   - whenever a Docker lifecycle event occurs (start, stop, die, …).
+//
+// The docker events watcher goroutine (watchDockerEvents) restarts the
+// process automatically on unexpected exits, so this loop never terminates
+// due to a transient docker events failure.
 func (c *GRPCClient) runContainerStream(ctx context.Context, cancel context.CancelFunc, out chan<- *pb.NodeMessage) {
 	defer cancel()
 
 	// Initial snapshot.
 	c.sendContainerSnapshot(ctx, out)
-
-	eventsCmd := exec.CommandContext(ctx, "docker", "events",
-		"--filter", "type=container",
-		"--filter", "event=start",
-		"--filter", "event=die",
-		"--filter", "event=stop",
-		"--filter", "event=pause",
-		"--filter", "event=unpause",
-		"--filter", "event=create",
-		"--filter", "event=destroy",
-		"--filter", "event=rename",
-		"--format", "{{.Status}}",
-	)
-
-	stdout, err := eventsCmd.StdoutPipe()
-	if err != nil {
-		log.Printf("⚠️  container stream: stdout pipe: %v", err)
-		return
-	}
-	if err := eventsCmd.Start(); err != nil {
-		log.Printf("⚠️  container stream: docker events start: %v", err)
-		return
-	}
-	defer eventsCmd.Wait() //nolint:errcheck
-
-	// eventSig receives a signal (capped at 1) whenever the scanner reads a line.
-	eventSig := make(chan struct{}, 1)
-
-	go func() {
-		scanner := bufio.NewScanner(stdout)
-		for scanner.Scan() {
-			select {
-			case eventSig <- struct{}{}:
-			default:
-				// already has a pending signal — skip
-			}
-		}
-		close(eventSig)
-	}()
 
 	const debounce = 500 * time.Millisecond
 	debounceTimer := time.NewTimer(debounce)
@@ -99,16 +64,18 @@ func (c *GRPCClient) runContainerStream(ctx context.Context, cancel context.Canc
 
 	pending := false
 
+	// eventSig is written to by watchDockerEvents. It is NEVER closed,
+	// so the select loop never sees a !ok case and never exits due to
+	// docker events exiting unexpectedly.
+	eventSig := make(chan struct{}, 1)
+	go c.watchDockerEvents(ctx, eventSig)
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 
-		case _, ok := <-eventSig:
-			if !ok {
-				// docker events exited (context cancelled or daemon restarted).
-				return
-			}
+		case <-eventSig:
 			if !pending {
 				pending = true
 				debounceTimer.Reset(debounce)
@@ -122,6 +89,83 @@ func (c *GRPCClient) runContainerStream(ctx context.Context, cancel context.Canc
 			c.sendContainerSnapshot(ctx, out)
 		}
 	}
+}
+
+// watchDockerEvents runs `docker events` in a loop, writing to sig on every
+// container lifecycle event. It restarts the process with exponential back-off
+// whenever it exits unexpectedly. The goroutine exits only when ctx is done.
+func (c *GRPCClient) watchDockerEvents(ctx context.Context, sig chan<- struct{}) {
+	backoff := time.Second
+	const maxBackoff = 30 * time.Second
+
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+
+		eventsCmd := exec.CommandContext(ctx, "docker", "events",
+			"--filter", "type=container",
+			"--filter", "event=start",
+			"--filter", "event=die",
+			"--filter", "event=stop",
+			"--filter", "event=pause",
+			"--filter", "event=unpause",
+			"--filter", "event=create",
+			"--filter", "event=destroy",
+			"--filter", "event=rename",
+			"--format", "{{.Status}}",
+		)
+
+		stdout, err := eventsCmd.StdoutPipe()
+		if err != nil {
+			log.Printf("⚠️  container stream: stdout pipe: %v", err)
+			if !sleepWithBackoff(ctx, &backoff, maxBackoff) {
+				return
+			}
+			continue
+		}
+		if err := eventsCmd.Start(); err != nil {
+			log.Printf("⚠️  container stream: docker events start: %v", err)
+			if !sleepWithBackoff(ctx, &backoff, maxBackoff) {
+				return
+			}
+			continue
+		}
+		backoff = time.Second // reset on successful start
+
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			select {
+			case sig <- struct{}{}:
+			default: // already has a pending signal — skip
+			}
+		}
+		eventsCmd.Wait() //nolint:errcheck
+
+		if ctx.Err() != nil {
+			return
+		}
+		log.Printf("⚠️  container stream: docker events exited unexpectedly, restarting")
+		if !sleepWithBackoff(ctx, &backoff, maxBackoff) {
+			return
+		}
+	}
+}
+
+// sleepWithBackoff waits for the current backoff duration (respecting ctx
+// cancellation), then doubles it up to maxBackoff. Returns false if ctx was
+// cancelled during the wait.
+func sleepWithBackoff(ctx context.Context, backoff *time.Duration, maxBackoff time.Duration) bool {
+	select {
+	case <-time.After(*backoff):
+	case <-ctx.Done():
+		return false
+	}
+	*backoff *= 2
+	if *backoff > maxBackoff {
+		*backoff = maxBackoff
+	}
+	return true
 }
 
 // sendContainerSnapshot calls ContainerListSnapshot and pushes the result to out.
