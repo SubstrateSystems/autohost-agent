@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 
 	"autohost-agent/internal/commands"
@@ -98,7 +99,14 @@ func (c *GRPCClient) runOnce(ctx context.Context) error {
 		transportCreds = grpc.WithTransportCredentials(insecure.NewCredentials())
 	}
 
-	conn, err := grpc.NewClient(addr, transportCreds)
+	conn, err := grpc.NewClient(addr,
+		transportCreds,
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                20 * time.Second, // send PING every 20s when idle
+			Timeout:             5 * time.Second,  // wait 5s for PONG before closing
+			PermitWithoutStream: true,             // keep alive even with no active RPCs
+		}),
+	)
 	if err != nil {
 		return fmt.Errorf("dial %s: %w", c.address, err)
 	}
