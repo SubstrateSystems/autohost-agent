@@ -87,6 +87,16 @@ func (c *GRPCClient) runOnce(ctx context.Context) error {
 	// 2. Limpiar la dirección para gRPC
 	addr = strings.TrimPrefix(addr, "https://")
 	addr = strings.TrimPrefix(addr, "http://")
+	addr = strings.TrimRight(addr, "/")
+
+	if !strings.Contains(addr, ":") {
+		if useTLS || strings.Contains(addr, ".") {
+			addr = addr + ":443"
+			useTLS = true
+		} else {
+			addr = addr + ":9090"
+		}
+	}
 
 	var transportCreds grpc.DialOption
 	if useTLS {
