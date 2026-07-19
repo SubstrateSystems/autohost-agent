@@ -70,6 +70,10 @@ func New(cfg *Config, version string) *Agent {
 func (a *Agent) Run(ctx context.Context) error {
 	log.Printf("Agent starting — NodeID: %s, gRPC: %s", a.cfg.NodeID, a.cfg.GRPCAddress)
 
+	// Periodically return unused memory pages to the OS to keep RSS stable
+	// on long-running VPS deployments.
+	startMemoryTrimLoop(ctx)
+
 	// Report version to the API on every startup so the frontend stays up to date.
 	if a.version != "" {
 		if err := a.apiClient.ReportVersion(ctx, a.version); err != nil {

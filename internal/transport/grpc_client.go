@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -14,6 +15,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 
 	"autohost-agent/internal/commands"
@@ -34,6 +36,10 @@ type GRPCClient struct {
 
 	logMu     sync.Mutex
 	logCancel context.CancelFunc // non-nil while log streaming is active
+	logDone   <-chan struct{}    // closed when the active log goroutine exits
+
+	containerMu     sync.Mutex
+	containerCancel context.CancelFunc // non-nil while container streaming is active
 
 	healthMon *healthMonitor
 }
@@ -93,7 +99,14 @@ func (c *GRPCClient) runOnce(ctx context.Context) error {
 		transportCreds = grpc.WithTransportCredentials(insecure.NewCredentials())
 	}
 
-	conn, err := grpc.NewClient(addr, transportCreds)
+	conn, err := grpc.NewClient(addr,
+		transportCreds,
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                20 * time.Second, // send PING every 20s when idle
+			Timeout:             5 * time.Second,  // wait 5s for PONG before closing
+			PermitWithoutStream: true,             // keep alive even with no active RPCs
+		}),
+	)
 	if err != nil {
 		return fmt.Errorf("dial %s: %w", c.address, err)
 	}
@@ -156,6 +169,7 @@ func (c *GRPCClient) connectStream(ctx context.Context, client pb.NodeAgentServi
 	defer func() {
 		streamCancel()
 		c.healthMon.stopAll()
+		c.stopContainerStream()
 	}()
 
 	// Buffered channel so goroutines don't block on slow sends.
@@ -205,6 +219,10 @@ func (c *GRPCClient) connectStream(ctx context.Context, client pb.NodeAgentServi
 			c.startLogStream(streamCtx, p.StreamLogs, results)
 		case *pb.ServerMessage_StopLogs:
 			c.stopLogStream()
+		case *pb.ServerMessage_StreamContainers:
+			c.startContainerStream(streamCtx, results)
+		case *pb.ServerMessage_StopContainers:
+			c.stopContainerStream()
 		case *pb.ServerMessage_ConfigureHealthCheck:
 			cfg := healthCheckConfig{
 				MonitorID:          p.ConfigureHealthCheck.GetMonitorId(),
@@ -226,7 +244,12 @@ func (c *GRPCClient) connectStream(ctx context.Context, client pb.NodeAgentServi
 		}
 	}
 
-	close(results)
+	// Cancel the stream context BEFORE closing the results channel so that
+	// heartbeatLoop and metricsLoop stop trying to send. Sending to a closed
+	// channel panics even inside a select-with-default, so we must guarantee
+	// those goroutines have received the cancellation signal first.
+	// streamCancel is idempotent; the deferred call below is a no-op after this.
+	streamCancel()
 	<-sendDone
 	return nil
 }
@@ -337,9 +360,17 @@ func (c *GRPCClient) handleJob(ctx context.Context, job *pb.ExecuteJobPayload, r
 	log.Printf("⚙️  gRPC job %s: executing command %q", job.GetJobId(), job.GetCommandName())
 
 	// Build optional payload from the proto params field.
+	// params is a JSON object string — unmarshal it so commands can access
+	// individual keys directly (e.g. payload["domain"]).
+	// Also keep the raw JSON string under "params" for commands that read it
+	// as a single blob (e.g. MarketplaceInstall).
 	var payload map[string]any
 	if p := job.GetParams(); p != "" {
-		payload = map[string]any{"params": p}
+		if err := json.Unmarshal([]byte(p), &payload); err != nil {
+			payload = map[string]any{}
+			log.Printf("⚠️  gRPC job %s: could not parse params JSON: %v", job.GetJobId(), err)
+		}
+		payload["params"] = p // always expose raw JSON string
 	}
 
 	res := c.registry.Execute(ctx, job.GetCommandName(), payload)

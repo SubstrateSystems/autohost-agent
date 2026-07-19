@@ -5,10 +5,12 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Variables para calcular CPU como delta entre lecturas
 var (
+	cpuMu        sync.Mutex
 	prevCPUTotal uint64
 	prevCPUIdle  uint64
 	hasPrevCPU   bool
@@ -17,6 +19,9 @@ var (
 // GetCPUUsagePercent reads /proc/stat and calculates CPU usage as a delta
 // between this reading and the previous one.
 func GetCPUUsagePercent() (float64, error) {
+	cpuMu.Lock()
+	defer cpuMu.Unlock()
+
 	file, err := os.Open("/proc/stat")
 	if err != nil {
 		return 0, err

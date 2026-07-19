@@ -64,13 +64,17 @@ func (c *GRPCClient) streamJournalctlLogs(logCtx context.Context, cancel context
 		log.Printf("📋 log stream started (unit=%q lines=%d firstRun=%v)", unit, histLines, firstRun)
 		firstRun = false
 
-		// Unblock scanner.Scan() immediately when context is cancelled,
+		// iterCtx is cancelled when either this iteration ends or the outer
+		// logCtx is cancelled. Using a per-iteration context prevents goroutine
+		// accumulation across retries (e.g. when journalctl repeatedly exits).
+		iterCtx, iterCancel := context.WithCancel(logCtx)
+
+		// Unblock scanner.Scan() immediately when this iteration ends,
 		// without waiting for the exec.CommandContext → cmd.Wait chain.
 		go func() {
-			<-logCtx.Done()
+			<-iterCtx.Done()
 			stdout.Close()
 		}()
-		firstRun = false
 
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
@@ -91,6 +95,7 @@ func (c *GRPCClient) streamJournalctlLogs(logCtx context.Context, cancel context
 				}},
 			}:
 			case <-logCtx.Done():
+				iterCancel()
 				cmd.Process.Kill()
 				return
 			default:
@@ -98,6 +103,7 @@ func (c *GRPCClient) streamJournalctlLogs(logCtx context.Context, cancel context
 			}
 		}
 		cmd.Wait()
+		iterCancel() // ensure the stdout-close goroutine exits before next iteration
 
 		if errOut := strings.TrimSpace(stderrBuf.String()); errOut != "" {
 			log.Printf("⚠️  journalctl stderr: %s", errOut)

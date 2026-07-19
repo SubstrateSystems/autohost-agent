@@ -23,6 +23,13 @@ type Command interface {
 	Execute(ctx context.Context, payload map[string]any) error
 }
 
+// CommandWithOutput is an optional extension for built-in commands that
+// produce output that must be captured in the job result (e.g. status checks).
+type CommandWithOutput interface {
+	Command
+	ExecuteWithOutput(ctx context.Context, payload map[string]any) (string, error)
+}
+
 // registryEntry holds a command handler together with its kind.
 type registryEntry struct {
 	cmd  Command
@@ -80,6 +87,12 @@ func (r *Registry) Execute(ctx context.Context, jobType string, payload map[stri
 
 	if custom, ok := entry.cmd.(*CustomScriptCommand); ok {
 		output, err := custom.ExecuteWithOutput(ctx)
+		return ExecuteResult{Output: output, Err: err}
+	}
+
+	// Built-in commands that need their output captured implement CommandWithOutput.
+	if cwo, ok := entry.cmd.(CommandWithOutput); ok {
+		output, err := cwo.ExecuteWithOutput(ctx, payload)
 		return ExecuteResult{Output: output, Err: err}
 	}
 

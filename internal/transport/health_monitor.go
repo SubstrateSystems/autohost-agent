@@ -189,17 +189,23 @@ func checkTCP(ctx context.Context, cfg healthCheckConfig, start time.Time) (stri
 	return "up", latencyMs, fmt.Sprintf("TCP %s reachable", addr)
 }
 
-func checkProcess(ctx context.Context, cfg healthCheckConfig, start time.Time) (string, int, string) {
-	// Use the Docker socket to check if the container is running.
-	// We call the Docker Unix socket API directly to avoid importing the Docker SDK.
-	socketPath := "/var/run/docker.sock"
-	transport := &http.Transport{
+// dockerSocketClient is a package-level, reusable HTTP client that talks to the
+// Docker Unix socket. Creating a new http.Transport on every checkProcess call
+// leaks the underlying idle-connection goroutines (readLoop + writeLoop) because
+// the abandoned transport keeps them alive indefinitely. One shared client with
+// MaxIdleConns=1 and a finite IdleConnTimeout avoids any accumulation.
+var dockerSocketClient = &http.Client{
+	Timeout: 5 * time.Second,
+	Transport: &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
+			return (&net.Dialer{}).DialContext(ctx, "unix", "/var/run/docker.sock")
 		},
-	}
-	client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
+		MaxIdleConns:    1,
+		IdleConnTimeout: 90 * time.Second,
+	},
+}
 
+func checkProcess(ctx context.Context, cfg healthCheckConfig, start time.Time) (string, int, string) {
 	name := cfg.ServiceName
 	if strings.HasPrefix(name, "/") {
 		name = strings.TrimPrefix(name, "/")
@@ -213,7 +219,7 @@ func checkProcess(ctx context.Context, cfg healthCheckConfig, start time.Time) (
 		"http://docker/containers/"+name+"/json",
 		nil,
 	)
-	resp, err := client.Do(req)
+	resp, err := dockerSocketClient.Do(req)
 	latencyMs := int(time.Since(start).Milliseconds())
 	if err != nil {
 		return "down", latencyMs, fmt.Sprintf("docker inspect: %v", err)
