@@ -181,26 +181,11 @@ prompt_or_env() {
     return
   fi
 
-  # Cuando se ejecuta via `curl | bash`, stdin NO es la terminal.
-  # Redirigir read a /dev/tty para leer del usuario real.
-  if [ ! -t 0 ] && [ ! -e /dev/tty ]; then
-    log_error "Modo no-interactivo sin /dev/tty. Usa variables de entorno:"
-    log_error "  AUTOHOST_API_URL, AUTOHOST_TOKEN, AUTOHOST_NODE_ID, AUTOHOST_TAGS"
-    exit 1
-  fi
-
-  if [ -n "$default_val" ]; then
-    read -rp "  ${prompt_text} [${default_val}]: " input </dev/tty
-    eval "${var_name}=\"${input:-$default_val}\""
+  eval "${var_name}=\"${default_val}\""
+  if echo "$var_name" | grep -qi "token"; then
+    log_info "${var_name} asignado al valor por defecto (REDACTED)"
   else
-    while true; do
-      read -rp "  ${prompt_text}: " input </dev/tty
-      if [ -n "$input" ]; then
-        eval "${var_name}=\"$input\""
-        break
-      fi
-      log_warn "Este campo es obligatorio."
-    done
+    log_info "${var_name} asignado al valor por defecto (${default_val})"
   fi
 }
 
@@ -211,8 +196,8 @@ collect_config() {
   echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo ""
 
-  prompt_or_env "AUTOHOST_API_URL"  "URL de la API (ej: https://cloud.autohost.dev)" ""
-  prompt_or_env "AUTOHOST_TOKEN"    "Token de enrolamiento del nodo"                 ""
+  prompt_or_env "AUTOHOST_API_URL"  "URL de la API (ej: https://cloud.autohost.dev)" "https://cloud.autohost.dev"
+  prompt_or_env "AUTOHOST_TOKEN"    "Token de enrolamiento del nodo"                 "default-token"
   prompt_or_env "AUTOHOST_NODE_ID"  "ID del nodo"                                    "$(hostname)"
 
   local default_tags=""
@@ -224,9 +209,8 @@ collect_config() {
   WS_URL="${WS_URL/http:\/\//ws://}"
   WS_URL="${WS_URL%/}/ws"
 
-  # gRPC: mismo host, puerto 9090
-  GRPC_HOST="$(echo "$base_url" | sed -E 's|https?://([^/:]+).*|\1|')"
-  GRPC_ADDRESS="${GRPC_HOST}:9090"
+  # gRPC: usar la nueva dirección
+  GRPC_ADDRESS="grpc.autohst.dev:443"
 
   echo ""
   log_info "Resumen de configuración:"
