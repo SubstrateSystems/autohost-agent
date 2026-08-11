@@ -283,10 +283,6 @@ func (c *GRPCClient) heartbeatLoop(ctx context.Context, out chan<- *pb.NodeMessa
 }
 
 func (c *GRPCClient) sendHeartbeat(out chan<- *pb.NodeMessage) {
-	uptime, err := uptimeSeconds()
-	if err != nil {
-		uptime = 0
-	}
 	msg := &pb.NodeMessage{
 		Payload: &pb.NodeMessage_Heartbeat{
 			Heartbeat: &pb.HeartbeatPayload{
@@ -294,7 +290,6 @@ func (c *GRPCClient) sendHeartbeat(out chan<- *pb.NodeMessage) {
 			},
 		},
 	}
-	_ = uptime // HeartbeatPayload only carries node_id; uptime goes in MetricPayload
 	select {
 	case out <- msg:
 	default:
