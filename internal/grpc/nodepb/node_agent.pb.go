@@ -813,8 +813,6 @@ func (x *JobResultPayload) GetError() string {
 type HeartbeatPayload struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
-	IpLocal       string                 `protobuf:"bytes,2,opt,name=ip_local,json=ipLocal,proto3" json:"ip_local,omitempty"`
-	IpVpn         string                 `protobuf:"bytes,3,opt,name=ip_vpn,json=ipVpn,proto3" json:"ip_vpn,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -852,20 +850,6 @@ func (*HeartbeatPayload) Descriptor() ([]byte, []int) {
 func (x *HeartbeatPayload) GetNodeId() string {
 	if x != nil {
 		return x.NodeId
-	}
-	return ""
-}
-
-func (x *HeartbeatPayload) GetIpLocal() string {
-	if x != nil {
-		return x.IpLocal
-	}
-	return ""
-}
-
-func (x *HeartbeatPayload) GetIpVpn() string {
-	if x != nil {
-		return x.IpVpn
 	}
 	return ""
 }
@@ -1900,11 +1884,9 @@ const file_proto_node_agent_v1_node_agent_proto_rawDesc = "" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x120\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x18.node_agent.v1.JobStatusR\x06status\x12\x16\n" +
 	"\x06output\x18\x03 \x01(\tR\x06output\x12\x14\n" +
-	"\x05error\x18\x04 \x01(\tR\x05error\"]\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error\"+\n" +
 	"\x10HeartbeatPayload\x12\x17\n" +
-	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x19\n" +
-	"\bip_local\x18\x02 \x01(\tR\aipLocal\x12\x15\n" +
-	"\x06ip_vpn\x18\x03 \x01(\tR\x05ipVpn\"\xa4\x01\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\xa4\x01\n" +
 	"\x11ExecuteJobPayload\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12!\n" +
 	"\fcommand_name\x18\x02 \x01(\tR\vcommandName\x12=\n" +
