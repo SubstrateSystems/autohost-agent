@@ -8,4 +8,6 @@ const (
 	EndpointJobResult      = "/v1/jobs/result"
 	EndpointCustomCommands = "/v1/custom-commands"
 	EndpointRefreshToken   = "/v1/auth/refresh"
+	EndpointNetworkStats   = "/v1/agent/network-stats"
 )
+
