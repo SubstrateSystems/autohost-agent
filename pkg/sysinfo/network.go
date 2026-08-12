@@ -14,23 +14,23 @@ import (
 // NetworkInterfaceStats holds accumulated counters for one network interface,
 // read directly from /proc/net/dev (no external commands needed).
 type NetworkInterfaceStats struct {
-	Interface string
-	RxBytes   uint64
-	RxPackets uint64
-	RxErrors  uint64
-	RxDropped uint64
-	TxBytes   uint64
-	TxPackets uint64
-	TxErrors  uint64
-	TxDropped uint64
+	Interface string `json:"interface"`
+	RxBytes   uint64 `json:"rx_bytes"`
+	RxPackets uint64 `json:"rx_packets"`
+	RxErrors  uint64 `json:"rx_errors"`
+	RxDropped uint64 `json:"rx_dropped"`
+	TxBytes   uint64 `json:"tx_bytes"`
+	TxPackets uint64 `json:"tx_packets"`
+	TxErrors  uint64 `json:"tx_errors"`
+	TxDropped uint64 `json:"tx_dropped"`
 }
 
 // ListeningPort represents a TCP or UDP port actively listening on the host,
 // parsed from /proc/net/tcp and /proc/net/tcp6 (state 0x0A = LISTEN).
 type ListeningPort struct {
-	Port     uint16
-	Protocol string // "tcp" | "udp"
-	BindAddr string // "0.0.0.0", "127.0.0.1", "100.64.0.x", "::" etc.
+	Port     uint16 `json:"port"`
+	Protocol string `json:"protocol"` // "tcp" | "udp"
+	BindAddr string `json:"bind_addr"` // "0.0.0.0", "127.0.0.1", "100.64.0.x", "::" etc.
 }
 
 // GetNetworkStats reads /proc/net/dev and returns per-interface stats.
