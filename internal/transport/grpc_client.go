@@ -303,19 +303,19 @@ func (c *GRPCClient) metricsLoop(ctx context.Context, out chan<- *pb.NodeMessage
 	defer ticker.Stop()
 
 	// Send the first batch immediately.
-	c.sendMetrics(out)
+	c.sendMetrics(ctx, out)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			c.sendMetrics(out)
+			c.sendMetrics(ctx, out)
 		}
 	}
 }
 
-func (c *GRPCClient) sendMetrics(out chan<- *pb.NodeMessage) {
+func (c *GRPCClient) sendMetrics(ctx context.Context, out chan<- *pb.NodeMessage) {
 	m, err := c.metricsService.Collect()
 	if err != nil {
 		log.Printf("⚠️  gRPC: collect metrics: %v", err)
@@ -343,6 +343,9 @@ func (c *GRPCClient) sendMetrics(out chan<- *pb.NodeMessage) {
 	default:
 		log.Printf("⚠️  gRPC: metrics buffer full, skipping")
 	}
+
+	// Automatically push container metrics snapshot for background 24/7 history recording
+	c.sendContainerSnapshot(ctx, out)
 }
 
 // uptimeSeconds returns the system uptime in seconds.
