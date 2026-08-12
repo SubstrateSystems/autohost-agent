@@ -132,11 +132,16 @@ func (a *Agent) sendNetworkStats(ctx context.Context) {
 		return
 	}
 	peers, _ := sysinfo.GetVPNPeers()
+	conns, _ := sysinfo.GetActiveConnections()
+	reqs, rps, _ := sysinfo.GetRecentHTTPRequests()
 
 	payload := &api.NetworkStatsPayload{
-		Interfaces: ifaces,
-		Ports:      ports,
-		Peers:      peers,
+		Interfaces:  ifaces,
+		Ports:       ports,
+		Peers:       peers,
+		Connections: conns,
+		Requests:    reqs,
+		RPS:         rps,
 	}
 	if err := a.apiClient.SendNetworkStats(ctx, payload); err != nil {
 		log.Printf("⚠️  send network stats: %v", err)
