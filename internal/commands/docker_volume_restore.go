@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -93,12 +94,16 @@ func (c *DockerVolumeRestore) ExecuteWithOutput(ctx context.Context, payload map
 	}()
 
 	dockerArgs := []string{"run", "--rm"}
+	var cleanTargets []string
 	for i, v := range vols {
 		mountTarget := fmt.Sprintf("/target/vol_%d", i)
 		dockerArgs = append(dockerArgs, "-v", fmt.Sprintf("%s:%s", v, mountTarget))
+		cleanTargets = append(cleanTargets, fmt.Sprintf("%s/* %s/.[!.]*", mountTarget, mountTarget))
 	}
 	dockerArgs = append(dockerArgs, "-v", fmt.Sprintf("%s:/source", tmpDir))
-	dockerArgs = append(dockerArgs, "alpine", "tar", "-xzf", "/source/backup.tar.gz", "-C", "/target")
+
+	shScript := fmt.Sprintf("rm -rf %s 2>/dev/null || true; tar -xzf /source/backup.tar.gz -C /target", strings.Join(cleanTargets, " "))
+	dockerArgs = append(dockerArgs, "alpine", "sh", "-c", shScript)
 
 	cmd := exec.CommandContext(ctx, "docker", dockerArgs...)
 	var errBuf bytes.Buffer
