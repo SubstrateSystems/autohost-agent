@@ -142,4 +142,6 @@ func RegisterAll(r *Registry) {
 	r.Register("caddy.upsert-route", &CaddyUpsertRoute{})
 	r.Register("caddy.delete-route", &CaddyDeleteRoute{})
 	r.Register("caddy.status", &CaddyStatus{})
+	r.Register("docker.volume.backup", &DockerVolumeBackup{})
+	r.Register("docker.volume.restore", &DockerVolumeRestore{})
 }
