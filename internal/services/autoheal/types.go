@@ -42,6 +42,8 @@ type ServiceHealthState struct {
 	RestartTimestamps   []int64       `json:"restart_timestamps"`
 	RecreateAttempts    int           `json:"recreate_attempts"`
 	LastActionTimestamp *int64        `json:"last_action_timestamp"`
+	FailureStartedAt    *int64        `json:"failure_started_at,omitempty"`
+	RecoveredAt         *int64        `json:"recovered_at,omitempty"`
 }
 
 type CommandRunner interface {

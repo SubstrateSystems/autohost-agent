@@ -25,10 +25,11 @@ func (c *CustomScriptCommand) Execute(ctx context.Context, _ map[string]any) err
 
 // ExecuteWithOutput runs the script and returns (output, error).
 func (c *CustomScriptCommand) ExecuteWithOutput(_ context.Context) (string, error) {
-	if _, err := os.Stat(c.ScriptPath); err != nil {
-		return "", fmt.Errorf("script not found: %s", c.ScriptPath)
+	absPath, err := ValidateScriptSecurity(c.ScriptPath)
+	if err != nil {
+		return "", fmt.Errorf("script validation failed: %w", err)
 	}
-	return shell.ExecWithOutput("bash", c.ScriptPath)
+	return shell.ExecWithOutput("bash", absPath)
 }
 
 // RegisterCustomScripts discovers all .sh files in the given directory and

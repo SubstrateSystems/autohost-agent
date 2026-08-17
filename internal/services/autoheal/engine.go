@@ -24,6 +24,8 @@ func CreateInitialState() *ServiceHealthState {
 		RestartTimestamps:   []int64{},
 		RecreateAttempts:    0,
 		LastActionTimestamp: nil,
+		FailureStartedAt:    nil,
+		RecoveredAt:         nil,
 	}
 }
 
@@ -77,9 +79,16 @@ func HandleServiceCheck(
 	// 0. If AutoHeal is globally disabled
 	if !config.Enabled {
 		if isHealthy {
+			if state.FailureStartedAt != nil {
+				state.RecoveredAt = &now
+			}
 			state.ConsecutiveFailures = 0
 			updateStatus(StatusHealthy)
 		} else {
+			if state.FailureStartedAt == nil {
+				state.FailureStartedAt = &now
+			}
+			state.RecoveredAt = nil
 			state.ConsecutiveFailures++
 			updateStatus(StatusDegraded)
 		}
@@ -88,6 +97,9 @@ func HandleServiceCheck(
 
 	// 1. Service is HEALTHY
 	if isHealthy {
+		if state.FailureStartedAt != nil {
+			state.RecoveredAt = &now
+		}
 		state.ConsecutiveFailures = 0
 		if state.Status != StatusCoolingDown {
 			state.RestartTimestamps = []int64{}
@@ -99,6 +111,10 @@ func HandleServiceCheck(
 	}
 
 	// 2. Service is UNHEALTHY
+	if state.FailureStartedAt == nil {
+		state.FailureStartedAt = &now
+	}
+	state.RecoveredAt = nil
 
 	// 2a. Check Grace Period (COOLING_DOWN)
 	if state.LastActionTimestamp != nil {

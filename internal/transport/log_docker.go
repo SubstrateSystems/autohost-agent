@@ -88,6 +88,7 @@ func (c *GRPCClient) streamDockerLogs(logCtx context.Context, cancel context.Can
 			if line == "" {
 				continue
 			}
+			line = sanitizeLogLine(line)
 			select {
 			case results <- &pb.NodeMessage{
 				Payload: &pb.NodeMessage_LogEntry{LogEntry: &pb.LogEntryPayload{

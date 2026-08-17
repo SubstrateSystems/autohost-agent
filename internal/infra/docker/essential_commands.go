@@ -18,16 +18,25 @@ func Stop(appName domain.AppName) error {
 }
 
 func Start(appName domain.AppName) error {
-	ymlPath := filepath.Join(dir.GetSubdir("apps"), string(appName), "compose.yml")
+	appDir := filepath.Join(dir.GetSubdir("apps"), string(appName))
+	ymlPath := filepath.Join(appDir, "compose.yml")
 
 	// Validar si existe el archivo compose.yml
-	if _, err := os.Stat(ymlPath); os.IsNotExist(err) {
+	content, err := os.ReadFile(ymlPath)
+	if os.IsNotExist(err) {
 		return fmt.Errorf("el archivo de configuración no existe: %s", ymlPath)
+	} else if err != nil {
+		return fmt.Errorf("error al leer compose.yml: %w", err)
+	}
+
+	// Validar seguridad del compose antes de levantar contenedores
+	if err := ValidateCompose(string(content), appDir); err != nil {
+		return fmt.Errorf("validación de seguridad fallida para %s: %w", appName, err)
 	}
 
 	fmt.Printf("🔄 Levantando aplicación '%s'...\n", appName)
 	// Run from the app dir — compose.yml is auto-discovered, no -f needed.
-	output, err := shell.ExecWithDirOutput(filepath.Dir(ymlPath), "docker", "compose", "up", "-d")
+	output, err := shell.ExecWithDirOutput(appDir, "docker", "compose", "up", "-d")
 	if err != nil {
 		return fmt.Errorf("exit status: %w\n%s", err, output)
 	}

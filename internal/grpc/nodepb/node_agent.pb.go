@@ -1086,6 +1086,8 @@ type ConfigureHealthCheckPayload struct {
 	IntervalSeconds    int32                  `protobuf:"varint,8,opt,name=interval_seconds,json=intervalSeconds,proto3" json:"interval_seconds,omitempty"`
 	FailureThreshold   int32                  `protobuf:"varint,9,opt,name=failure_threshold,json=failureThreshold,proto3" json:"failure_threshold,omitempty"`
 	Enabled            bool                   `protobuf:"varint,10,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	AutoHealConfig     string                 `protobuf:"bytes,11,opt,name=auto_heal_config,json=autoHealConfig,proto3" json:"auto_heal_config,omitempty"` // JSON string of AutoHealConfig
+	AutoHealState      string                 `protobuf:"bytes,12,opt,name=auto_heal_state,json=autoHealState,proto3" json:"auto_heal_state,omitempty"`    // JSON string of ServiceHealthState
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -1190,6 +1192,20 @@ func (x *ConfigureHealthCheckPayload) GetEnabled() bool {
 	return false
 }
 
+func (x *ConfigureHealthCheckPayload) GetAutoHealConfig() string {
+	if x != nil {
+		return x.AutoHealConfig
+	}
+	return ""
+}
+
+func (x *ConfigureHealthCheckPayload) GetAutoHealState() string {
+	if x != nil {
+		return x.AutoHealState
+	}
+	return ""
+}
+
 // Sent by the server to remove a health check from the agent.
 type StopHealthCheckPayload struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1243,6 +1259,7 @@ type HealthCheckResultPayload struct {
 	LatencyMs           int32                  `protobuf:"varint,3,opt,name=latency_ms,json=latencyMs,proto3" json:"latency_ms,omitempty"`
 	Message             string                 `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
 	ConsecutiveFailures int32                  `protobuf:"varint,5,opt,name=consecutive_failures,json=consecutiveFailures,proto3" json:"consecutive_failures,omitempty"`
+	AutoHealState       string                 `protobuf:"bytes,6,opt,name=auto_heal_state,json=autoHealState,proto3" json:"auto_heal_state,omitempty"` // JSON string of updated ServiceHealthState
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -1310,6 +1327,13 @@ func (x *HealthCheckResultPayload) GetConsecutiveFailures() int32 {
 		return x.ConsecutiveFailures
 	}
 	return 0
+}
+
+func (x *HealthCheckResultPayload) GetAutoHealState() string {
+	if x != nil {
+		return x.AutoHealState
+	}
+	return ""
 }
 
 // Sent by server to ask the agent to collect a pprof profile.
@@ -1899,7 +1923,7 @@ const file_proto_node_agent_v1_node_agent_proto_rawDesc = "" +
 	"\x0fLogEntryPayload\x12!\n" +
 	"\ftimestamp_us\x18\x01 \x01(\x03R\vtimestampUs\x12\x12\n" +
 	"\x04unit\x18\x02 \x01(\tR\x04unit\x12\x18\n" +
-	"\amessage\x18\x03 \x01(\tR\amessage\"\xf3\x02\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\"\xc5\x03\n" +
 	"\x1bConfigureHealthCheckPayload\x12\x1d\n" +
 	"\n" +
 	"monitor_id\x18\x01 \x01(\tR\tmonitorId\x12!\n" +
@@ -1913,10 +1937,12 @@ const file_proto_node_agent_v1_node_agent_proto_rawDesc = "" +
 	"\x10interval_seconds\x18\b \x01(\x05R\x0fintervalSeconds\x12+\n" +
 	"\x11failure_threshold\x18\t \x01(\x05R\x10failureThreshold\x12\x18\n" +
 	"\aenabled\x18\n" +
-	" \x01(\bR\aenabled\"7\n" +
+	" \x01(\bR\aenabled\x12(\n" +
+	"\x10auto_heal_config\x18\v \x01(\tR\x0eautoHealConfig\x12&\n" +
+	"\x0fauto_heal_state\x18\f \x01(\tR\rautoHealState\"7\n" +
 	"\x16StopHealthCheckPayload\x12\x1d\n" +
 	"\n" +
-	"monitor_id\x18\x01 \x01(\tR\tmonitorId\"\xbd\x01\n" +
+	"monitor_id\x18\x01 \x01(\tR\tmonitorId\"\xe5\x01\n" +
 	"\x18HealthCheckResultPayload\x12\x1d\n" +
 	"\n" +
 	"monitor_id\x18\x01 \x01(\tR\tmonitorId\x12\x16\n" +
@@ -1924,7 +1950,8 @@ const file_proto_node_agent_v1_node_agent_proto_rawDesc = "" +
 	"\n" +
 	"latency_ms\x18\x03 \x01(\x05R\tlatencyMs\x12\x18\n" +
 	"\amessage\x18\x04 \x01(\tR\amessage\x121\n" +
-	"\x14consecutive_failures\x18\x05 \x01(\x05R\x13consecutiveFailures\"\xa0\x01\n" +
+	"\x14consecutive_failures\x18\x05 \x01(\x05R\x13consecutiveFailures\x12&\n" +
+	"\x0fauto_heal_state\x18\x06 \x01(\tR\rautoHealState\"\xa0\x01\n" +
 	"\x15RequestProfilePayload\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12=\n" +

@@ -82,6 +82,7 @@ func (c *GRPCClient) streamJournalctlLogs(logCtx context.Context, cancel context
 			if line == "" {
 				continue
 			}
+			line = sanitizeLogLine(line)
 			u := unit
 			if u == "" {
 				u = extractUnit(line)

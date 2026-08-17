@@ -284,7 +284,7 @@ func (c *Client) findOrCreateServer() (string, error) {
 	// Prefer an existing server that already handles HTTPS/HTTP traffic.
 	for name, srv := range servers {
 		for _, addr := range srv.Listen {
-			if addr == ":443" || addr == ":80" || addr == ":443" {
+			if addr == ":443" || addr == ":80" {
 				return name, nil
 			}
 		}

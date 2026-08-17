@@ -50,6 +50,11 @@ func New(cfg *Config, version string) *Agent {
 		cfg.AgentToken,
 		cfg.NodeID,
 		cfg.Tags,
+		transport.GRPCTLSConfig{
+			Insecure:   cfg.GRPCInsecure,
+			CACertPath: cfg.GRPCCACert,
+			CertPin:    cfg.GRPCCertPin,
+		},
 		registry,
 		metricsService,
 	)

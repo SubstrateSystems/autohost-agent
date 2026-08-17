@@ -2,11 +2,16 @@ package transport
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"os"
 	"strings"
 	"sync"
@@ -23,11 +28,19 @@ import (
 	"autohost-agent/internal/services"
 )
 
+// GRPCTLSConfig holds TLS security options for the gRPC transport.
+type GRPCTLSConfig struct {
+	Insecure   bool   // If true, allows plaintext ONLY for localhost/loopback addresses.
+	CACertPath string // Optional path to custom CA certificate file.
+	CertPin    string // Optional SHA-256 fingerprint for certificate pinning.
+}
+
 type GRPCClient struct {
 	address        string
 	token          string
 	nodeID         string
 	tags           []string
+	tlsConfig      GRPCTLSConfig
 	registry       *commands.Registry
 	metricsService *services.MetricsService
 
@@ -44,12 +57,13 @@ type GRPCClient struct {
 	healthMon *healthMonitor
 }
 
-func NewGRPCClient(address, token, nodeID string, tags []string, registry *commands.Registry, metricsService *services.MetricsService) *GRPCClient {
+func NewGRPCClient(address, token, nodeID string, tags []string, tlsConfig GRPCTLSConfig, registry *commands.Registry, metricsService *services.MetricsService) *GRPCClient {
 	return &GRPCClient{
 		address:           address,
 		token:             token,
 		nodeID:            nodeID,
 		tags:              tags,
+		tlsConfig:         tlsConfig,
 		registry:          registry,
 		metricsService:    metricsService,
 		heartbeatInterval: 30 * time.Second,
@@ -79,34 +93,106 @@ func (c *GRPCClient) Run(ctx context.Context) error {
 	}
 }
 
-func (c *GRPCClient) runOnce(ctx context.Context) error {
-	// gRPC addresses must be "host:port" — strip any http:// or https:// prefix.
-	// Use TLS when the address has an https:// scheme (e.g. via Cloudflare Tunnel).
-	addr := c.address
-	useTLS := strings.HasPrefix(addr, "https://") || strings.HasSuffix(addr, ":443")
-	// 2. Limpiar la dirección para gRPC
+// BuildDialOptions parses the target address and configures secure transport credentials.
+func BuildDialOptions(rawAddr string, tlsCfg GRPCTLSConfig) (string, grpc.DialOption, error) {
+	if strings.TrimSpace(rawAddr) == "" {
+		return "", nil, errors.New("gRPC address is empty")
+	}
+
+	addr := rawAddr
 	addr = strings.TrimPrefix(addr, "https://")
 	addr = strings.TrimPrefix(addr, "http://")
 	addr = strings.TrimRight(addr, "/")
 
-	if !strings.Contains(addr, ":") {
-		if useTLS || strings.Contains(addr, ".") {
-			addr = addr + ":443"
-			useTLS = true
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+		if tlsCfg.Insecure && isLoopbackOrPrivateAddress(host) {
+			port = "9090"
 		} else {
-			addr = addr + ":9090"
+			port = "443"
+		}
+		addr = net.JoinHostPort(host, port)
+	}
+
+	// 1. Insecure mode: enforce loopback or private/VPN network address check
+	if tlsCfg.Insecure {
+		if !isLoopbackOrPrivateAddress(host) {
+			return "", nil, fmt.Errorf("security violation: plaintext insecure gRPC is only permitted for loopback or private network addresses, got %q", host)
+		}
+		return addr, grpc.WithTransportCredentials(insecure.NewCredentials()), nil
+	}
+
+	// 2. TLS configuration (mandatory for all remote / production endpoints)
+	tlsConfig := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+		ServerName: host,
+	}
+
+	// 3. Custom CA Certificate
+	if tlsCfg.CACertPath != "" {
+		caPEM, err := os.ReadFile(tlsCfg.CACertPath)
+		if err != nil {
+			return "", nil, fmt.Errorf("failed to read CA certificate from %s: %w", tlsCfg.CACertPath, err)
+		}
+		certPool := x509.NewCertPool()
+		if !certPool.AppendCertsFromPEM(caPEM) {
+			return "", nil, fmt.Errorf("failed to parse valid PEM CA certificate from %s", tlsCfg.CACertPath)
+		}
+		tlsConfig.RootCAs = certPool
+	}
+
+	// 4. Certificate Pinning (SHA-256 fingerprint)
+	if tlsCfg.CertPin != "" {
+		expectedPin := normalizeFingerprint(tlsCfg.CertPin)
+		tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+			if len(rawCerts) == 0 {
+				return errors.New("no peer certificates presented for pinning verification")
+			}
+			leafSha256 := sha256.Sum256(rawCerts[0])
+			actualHex := hex.EncodeToString(leafSha256[:])
+			if !strings.EqualFold(actualHex, expectedPin) {
+				return fmt.Errorf("certificate pinning mismatch: expected %s, got %s", expectedPin, actualHex)
+			}
+			return nil
 		}
 	}
 
-	var transportCreds grpc.DialOption
-	if useTLS {
-		// Usamos la configuración de TLS por defecto del sistema
-		// Esto es necesario para que Cloudflare acepte la conexión
-		transportCreds = grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
-			ServerName: strings.Split(addr, ":")[0], // Asegura el SNI correcto
-		}))
-	} else {
-		transportCreds = grpc.WithTransportCredentials(insecure.NewCredentials())
+	return addr, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)), nil
+}
+
+var _, cgnatNet, _ = net.ParseCIDR("100.64.0.0/10")
+
+func isLoopbackOrPrivateAddress(host string) bool {
+	clean := strings.TrimSpace(strings.ToLower(host))
+	if clean == "localhost" || clean == "127.0.0.1" || clean == "::1" || clean == "0.0.0.0" {
+		return true
+	}
+	ip := net.ParseIP(clean)
+	if ip != nil {
+		if ip.IsLoopback() || ip.IsUnspecified() || ip.IsPrivate() {
+			return true
+		}
+		if cgnatNet != nil && cgnatNet.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeFingerprint(pin string) string {
+	clean := strings.TrimSpace(strings.ToLower(pin))
+	clean = strings.TrimPrefix(clean, "sha256:")
+	clean = strings.TrimPrefix(clean, "sha256=")
+	clean = strings.ReplaceAll(clean, ":", "")
+	clean = strings.ReplaceAll(clean, " ", "")
+	return clean
+}
+
+func (c *GRPCClient) runOnce(ctx context.Context) error {
+	addr, transportCreds, err := BuildDialOptions(c.address, c.tlsConfig)
+	if err != nil {
+		return fmt.Errorf("grpc setup failed: %w", err)
 	}
 
 	conn, err := grpc.NewClient(addr,
@@ -118,7 +204,7 @@ func (c *GRPCClient) runOnce(ctx context.Context) error {
 		}),
 	)
 	if err != nil {
-		return fmt.Errorf("dial %s: %w", c.address, err)
+		return fmt.Errorf("dial %s: %w", addr, err)
 	}
 	defer conn.Close()
 
@@ -245,6 +331,8 @@ func (c *GRPCClient) connectStream(ctx context.Context, client pb.NodeAgentServi
 				IntervalSeconds:    int(p.ConfigureHealthCheck.GetIntervalSeconds()),
 				FailureThreshold:   int(p.ConfigureHealthCheck.GetFailureThreshold()),
 				Enabled:            p.ConfigureHealthCheck.GetEnabled(),
+				AutoHealConfig:     p.ConfigureHealthCheck.GetAutoHealConfig(),
+				AutoHealState:      p.ConfigureHealthCheck.GetAutoHealState(),
 			}
 			c.healthMon.upsert(streamCtx, cfg, results)
 		case *pb.ServerMessage_StopHealthCheck:

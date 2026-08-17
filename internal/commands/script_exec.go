@@ -3,7 +3,6 @@ package commands
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"autohost-agent/internal/domain"
@@ -27,29 +26,10 @@ func (c *ScriptExec) Execute(_ context.Context, payload map[string]any) error {
 		return fmt.Errorf("invalid script: %w", err)
 	}
 
-	// Ensure the script lives inside the allowed commands directory.
-	absPath, err := filepath.Abs(scriptPath)
+	// Validate script containment, symlinks, permissions and owner
+	absPath, err := ValidateScriptSecurity(scriptPath)
 	if err != nil {
-		return fmt.Errorf("cannot resolve script path: %w", err)
-	}
-
-	allowedDir, err := filepath.Abs(domain.CustomCommandsDir)
-	if err != nil {
-		return fmt.Errorf("cannot resolve commands dir: %w", err)
-	}
-
-	rel, err := filepath.Rel(allowedDir, absPath)
-	if err != nil || len(rel) > 1 && rel[:2] == ".." {
-		return fmt.Errorf("script must be inside %s", domain.CustomCommandsDir)
-	}
-
-	// Verify the file exists and is executable.
-	info, err := os.Stat(absPath)
-	if err != nil {
-		return fmt.Errorf("script not found: %w", err)
-	}
-	if info.IsDir() {
-		return fmt.Errorf("script_path points to a directory, not a file")
+		return fmt.Errorf("script validation failed: %w", err)
 	}
 
 	fmt.Printf("🔧 Ejecutando custom command: %s\n", filepath.Base(absPath))
