@@ -93,19 +93,25 @@ func (c *DockerVolumeRestore) ExecuteWithOutput(ctx context.Context, payload map
 		_ = startCmd.Run()
 	}()
 
-	dockerArgs := []string{"run", "--rm"}
+	dockerArgs := []string{"run", "-i", "--rm"}
 	var cleanTargets []string
 	for i, v := range vols {
 		mountTarget := fmt.Sprintf("/target/vol_%d", i)
 		dockerArgs = append(dockerArgs, "-v", fmt.Sprintf("%s:%s", v, mountTarget))
 		cleanTargets = append(cleanTargets, fmt.Sprintf("%s/* %s/.[!.]*", mountTarget, mountTarget))
 	}
-	dockerArgs = append(dockerArgs, "-v", fmt.Sprintf("%s:/source", tmpDir))
 
-	shScript := fmt.Sprintf("rm -rf %s 2>/dev/null || true; tar -xzf /source/backup.tar.gz -C /target", strings.Join(cleanTargets, " "))
+	shScript := fmt.Sprintf("rm -rf %s 2>/dev/null || true; tar -xzf - -C /target", strings.Join(cleanTargets, " "))
 	dockerArgs = append(dockerArgs, "alpine", "sh", "-c", shScript)
 
 	cmd := exec.CommandContext(ctx, "docker", dockerArgs...)
+	tarFileReader, err := os.Open(tarFile)
+	if err != nil {
+		return "", fmt.Errorf("failed to open downloaded archive: %w", err)
+	}
+	defer tarFileReader.Close()
+	cmd.Stdin = tarFileReader
+
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
 	if err := cmd.Run(); err != nil {

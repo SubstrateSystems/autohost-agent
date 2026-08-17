@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -82,13 +81,13 @@ func (c *DockerVolumeBackup) ExecuteWithOutput(ctx context.Context, payload map[
 		return "", fmt.Errorf("no volumes found to backup for container %q", req.ContainerName)
 	}
 
-	tmpDir, err := os.MkdirTemp("", "autohost-backup-*")
+	tmpFile, err := os.CreateTemp("", "autohost-backup-*.tar.gz")
 	if err != nil {
-		return "", fmt.Errorf("failed to create temp directory: %w", err)
+		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
-
-	tarFile := filepath.Join(tmpDir, "backup.tar.gz")
+	tarFilePath := tmpFile.Name()
+	defer os.Remove(tarFilePath)
+	defer tmpFile.Close()
 
 	if req.PauseContainer {
 		pauseCmd := exec.CommandContext(ctx, "docker", "pause", req.ContainerName)
@@ -106,17 +105,18 @@ func (c *DockerVolumeBackup) ExecuteWithOutput(ctx context.Context, payload map[
 		mountTarget := fmt.Sprintf("/source/vol_%d", i)
 		dockerArgs = append(dockerArgs, "-v", fmt.Sprintf("%s:%s:ro", v, mountTarget))
 	}
-	dockerArgs = append(dockerArgs, "-v", fmt.Sprintf("%s:/target", tmpDir))
-	dockerArgs = append(dockerArgs, "alpine", "tar", "-czf", "/target/backup.tar.gz", "-C", "/source", ".")
+	dockerArgs = append(dockerArgs, "alpine", "tar", "-czf", "-", "-C", "/source", ".")
 
 	cmd := exec.CommandContext(ctx, "docker", dockerArgs...)
+	cmd.Stdout = tmpFile
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("docker tar archive failed: %s (%w)", errBuf.String(), err)
 	}
+	_ = tmpFile.Close()
 
-	fi, err := os.Stat(tarFile)
+	fi, err := os.Stat(tarFilePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to stat backup file: %w", err)
 	}
@@ -127,7 +127,7 @@ func (c *DockerVolumeBackup) ExecuteWithOutput(ctx context.Context, payload map[
 		s3Key = fmt.Sprintf("backups/%s/%s_%s.tar.gz", req.ContainerName, req.ContainerName, time.Now().Format("20060102_150405"))
 	}
 
-	if err := uploadToS3(ctx, req.S3, tarFile, s3Key); err != nil {
+	if err := uploadToS3(ctx, req.S3, tarFilePath, s3Key); err != nil {
 		return "", fmt.Errorf("S3 upload failed: %w", err)
 	}
 
