@@ -105,7 +105,7 @@ func (c *DockerVolumeBackup) ExecuteWithOutput(ctx context.Context, payload map[
 		mountTarget := fmt.Sprintf("/source/vol_%d", i)
 		dockerArgs = append(dockerArgs, "-v", fmt.Sprintf("%s:%s:ro", v, mountTarget))
 	}
-	dockerArgs = append(dockerArgs, "alpine", "tar", "-czf", "-", "-C", "/source", ".")
+	dockerArgs = append(dockerArgs, "alpine", "tar", "-czf", "-", "--numeric-owner", "-C", "/source", ".")
 
 	cmd := exec.CommandContext(ctx, "docker", dockerArgs...)
 	cmd.Stdout = tmpFile

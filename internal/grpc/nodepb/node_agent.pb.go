@@ -297,6 +297,7 @@ type NodeMessage struct {
 	//	*NodeMessage_HealthResult
 	//	*NodeMessage_ProfileData
 	//	*NodeMessage_ContainerList
+	//	*NodeMessage_LogDiagnostic
 	Payload       isNodeMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -402,6 +403,15 @@ func (x *NodeMessage) GetContainerList() *ContainerListPayload {
 	return nil
 }
 
+func (x *NodeMessage) GetLogDiagnostic() *LogDiagnosticPayload {
+	if x != nil {
+		if x, ok := x.Payload.(*NodeMessage_LogDiagnostic); ok {
+			return x.LogDiagnostic
+		}
+	}
+	return nil
+}
+
 type isNodeMessage_Payload interface {
 	isNodeMessage_Payload()
 }
@@ -434,6 +444,10 @@ type NodeMessage_ContainerList struct {
 	ContainerList *ContainerListPayload `protobuf:"bytes,7,opt,name=container_list,json=containerList,proto3,oneof"`
 }
 
+type NodeMessage_LogDiagnostic struct {
+	LogDiagnostic *LogDiagnosticPayload `protobuf:"bytes,8,opt,name=log_diagnostic,json=logDiagnostic,proto3,oneof"`
+}
+
 func (*NodeMessage_JobResult) isNodeMessage_Payload() {}
 
 func (*NodeMessage_Heartbeat) isNodeMessage_Payload() {}
@@ -447,6 +461,8 @@ func (*NodeMessage_HealthResult) isNodeMessage_Payload() {}
 func (*NodeMessage_ProfileData) isNodeMessage_Payload() {}
 
 func (*NodeMessage_ContainerList) isNodeMessage_Payload() {}
+
+func (*NodeMessage_LogDiagnostic) isNodeMessage_Payload() {}
 
 type MetricPayload struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
@@ -576,6 +592,7 @@ type ServerMessage struct {
 	//	*ServerMessage_RequestProfile
 	//	*ServerMessage_StreamContainers
 	//	*ServerMessage_StopContainers
+	//	*ServerMessage_CollectLogs
 	Payload       isServerMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -690,6 +707,15 @@ func (x *ServerMessage) GetStopContainers() *StopContainersPayload {
 	return nil
 }
 
+func (x *ServerMessage) GetCollectLogs() *CollectLogsPayload {
+	if x != nil {
+		if x, ok := x.Payload.(*ServerMessage_CollectLogs); ok {
+			return x.CollectLogs
+		}
+	}
+	return nil
+}
+
 type isServerMessage_Payload interface {
 	isServerMessage_Payload()
 }
@@ -726,6 +752,10 @@ type ServerMessage_StopContainers struct {
 	StopContainers *StopContainersPayload `protobuf:"bytes,8,opt,name=stop_containers,json=stopContainers,proto3,oneof"`
 }
 
+type ServerMessage_CollectLogs struct {
+	CollectLogs *CollectLogsPayload `protobuf:"bytes,9,opt,name=collect_logs,json=collectLogs,proto3,oneof"`
+}
+
 func (*ServerMessage_ExecuteJob) isServerMessage_Payload() {}
 
 func (*ServerMessage_StreamLogs) isServerMessage_Payload() {}
@@ -741,6 +771,8 @@ func (*ServerMessage_RequestProfile) isServerMessage_Payload() {}
 func (*ServerMessage_StreamContainers) isServerMessage_Payload() {}
 
 func (*ServerMessage_StopContainers) isServerMessage_Payload() {}
+
+func (*ServerMessage_CollectLogs) isServerMessage_Payload() {}
 
 type JobResultPayload struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1854,6 +1886,205 @@ func (x *MetricResponse) GetSuccess() bool {
 	return false
 }
 
+// Server asks agent to collect, sanitize and prepare a diagnostic log bundle.
+type CollectLogsPayload struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	RequestId         string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`                          // correlation UUID
+	Sources           []string               `protobuf:"bytes,2,rep,name=sources,proto3" json:"sources,omitempty"`                                               // e.g. ["autohost-agent", "docker:nginx"]
+	LinesPerSource    int32                  `protobuf:"varint,3,opt,name=lines_per_source,json=linesPerSource,proto3" json:"lines_per_source,omitempty"`        // max lines per source (default 200, max 500)
+	IncludeContainers bool                   `protobuf:"varint,4,opt,name=include_containers,json=includeContainers,proto3" json:"include_containers,omitempty"` // also collect all running container logs
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *CollectLogsPayload) Reset() {
+	*x = CollectLogsPayload{}
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CollectLogsPayload) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CollectLogsPayload) ProtoMessage() {}
+
+func (x *CollectLogsPayload) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CollectLogsPayload.ProtoReflect.Descriptor instead.
+func (*CollectLogsPayload) Descriptor() ([]byte, []int) {
+	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *CollectLogsPayload) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *CollectLogsPayload) GetSources() []string {
+	if x != nil {
+		return x.Sources
+	}
+	return nil
+}
+
+func (x *CollectLogsPayload) GetLinesPerSource() int32 {
+	if x != nil {
+		return x.LinesPerSource
+	}
+	return 0
+}
+
+func (x *CollectLogsPayload) GetIncludeContainers() bool {
+	if x != nil {
+		return x.IncludeContainers
+	}
+	return false
+}
+
+// Agent returns sanitized logs + local pattern analysis to the server.
+type LogDiagnosticPayload struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	RequestId      string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`                // correlation UUID
+	DiagnosticJson string                 `protobuf:"bytes,2,opt,name=diagnostic_json,json=diagnosticJson,proto3" json:"diagnostic_json,omitempty"` // full JSON diagnostic report
+	Sources        []*LogSourceBundle     `protobuf:"bytes,3,rep,name=sources,proto3" json:"sources,omitempty"`                                     // raw sanitized log bundles
+	Error          string                 `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`                                         // non-empty if collection failed
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *LogDiagnosticPayload) Reset() {
+	*x = LogDiagnosticPayload{}
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogDiagnosticPayload) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogDiagnosticPayload) ProtoMessage() {}
+
+func (x *LogDiagnosticPayload) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogDiagnosticPayload.ProtoReflect.Descriptor instead.
+func (*LogDiagnosticPayload) Descriptor() ([]byte, []int) {
+	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *LogDiagnosticPayload) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *LogDiagnosticPayload) GetDiagnosticJson() string {
+	if x != nil {
+		return x.DiagnosticJson
+	}
+	return ""
+}
+
+func (x *LogDiagnosticPayload) GetSources() []*LogSourceBundle {
+	if x != nil {
+		return x.Sources
+	}
+	return nil
+}
+
+func (x *LogDiagnosticPayload) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+// One log source within a diagnostic bundle.
+type LogSourceBundle struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Source        string                 `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`                  // e.g. "journalctl:autohost-agent" or "docker:nginx"
+	RawLogs       string                 `protobuf:"bytes,2,opt,name=raw_logs,json=rawLogs,proto3" json:"raw_logs,omitempty"` // sanitized log text
+	LineCount     int32                  `protobuf:"varint,3,opt,name=line_count,json=lineCount,proto3" json:"line_count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogSourceBundle) Reset() {
+	*x = LogSourceBundle{}
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogSourceBundle) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogSourceBundle) ProtoMessage() {}
+
+func (x *LogSourceBundle) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_node_agent_v1_node_agent_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogSourceBundle.ProtoReflect.Descriptor instead.
+func (*LogSourceBundle) Descriptor() ([]byte, []int) {
+	return file_proto_node_agent_v1_node_agent_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *LogSourceBundle) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *LogSourceBundle) GetRawLogs() string {
+	if x != nil {
+		return x.RawLogs
+	}
+	return ""
+}
+
+func (x *LogSourceBundle) GetLineCount() int32 {
+	if x != nil {
+		return x.LineCount
+	}
+	return 0
+}
+
 var File_proto_node_agent_v1_node_agent_proto protoreflect.FileDescriptor
 
 const file_proto_node_agent_v1_node_agent_proto_rawDesc = "" +
@@ -1869,7 +2100,7 @@ const file_proto_node_agent_v1_node_agent_proto_rawDesc = "" +
 	"\x18RegisterCommandsResponse\x12\x1e\n" +
 	"\n" +
 	"registered\x18\x01 \x01(\x05R\n" +
-	"registered\"\xf8\x03\n" +
+	"registered\"\xc6\x04\n" +
 	"\vNodeMessage\x12@\n" +
 	"\n" +
 	"job_result\x18\x01 \x01(\v2\x1f.node_agent.v1.JobResultPayloadH\x00R\tjobResult\x12?\n" +
@@ -1878,7 +2109,8 @@ const file_proto_node_agent_v1_node_agent_proto_rawDesc = "" +
 	"\x06metric\x18\x04 \x01(\v2\x1c.node_agent.v1.MetricPayloadH\x00R\x06metric\x12N\n" +
 	"\rhealth_result\x18\x05 \x01(\v2'.node_agent.v1.HealthCheckResultPayloadH\x00R\fhealthResult\x12F\n" +
 	"\fprofile_data\x18\x06 \x01(\v2!.node_agent.v1.ProfileDataPayloadH\x00R\vprofileData\x12L\n" +
-	"\x0econtainer_list\x18\a \x01(\v2#.node_agent.v1.ContainerListPayloadH\x00R\rcontainerListB\t\n" +
+	"\x0econtainer_list\x18\a \x01(\v2#.node_agent.v1.ContainerListPayloadH\x00R\rcontainerList\x12L\n" +
+	"\x0elog_diagnostic\x18\b \x01(\v2#.node_agent.v1.LogDiagnosticPayloadH\x00R\rlogDiagnosticB\t\n" +
 	"\apayload\"\xbe\x03\n" +
 	"\rMetricPayload\x12*\n" +
 	"\x11cpu_usage_percent\x18\x01 \x01(\x02R\x0fcpuUsagePercent\x12&\n" +
@@ -1891,7 +2123,7 @@ const file_proto_node_agent_v1_node_agent_proto_rawDesc = "" +
 	"\x14disk_available_bytes\x18\b \x01(\x04R\x12diskAvailableBytes\x12,\n" +
 	"\x12disk_usage_percent\x18\t \x01(\x02R\x10diskUsagePercent\x12%\n" +
 	"\x0euptime_seconds\x18\n" +
-	" \x01(\x03R\ruptimeSeconds\"\x95\x05\n" +
+	" \x01(\x03R\ruptimeSeconds\"\xdd\x05\n" +
 	"\rServerMessage\x12C\n" +
 	"\vexecute_job\x18\x01 \x01(\v2 .node_agent.v1.ExecuteJobPayloadH\x00R\n" +
 	"executeJob\x12C\n" +
@@ -1902,7 +2134,8 @@ const file_proto_node_agent_v1_node_agent_proto_rawDesc = "" +
 	"\x11stop_health_check\x18\x05 \x01(\v2%.node_agent.v1.StopHealthCheckPayloadH\x00R\x0fstopHealthCheck\x12O\n" +
 	"\x0frequest_profile\x18\x06 \x01(\v2$.node_agent.v1.RequestProfilePayloadH\x00R\x0erequestProfile\x12U\n" +
 	"\x11stream_containers\x18\a \x01(\v2&.node_agent.v1.StreamContainersPayloadH\x00R\x10streamContainers\x12O\n" +
-	"\x0fstop_containers\x18\b \x01(\v2$.node_agent.v1.StopContainersPayloadH\x00R\x0estopContainersB\t\n" +
+	"\x0fstop_containers\x18\b \x01(\v2$.node_agent.v1.StopContainersPayloadH\x00R\x0estopContainers\x12F\n" +
+	"\fcollect_logs\x18\t \x01(\v2!.node_agent.v1.CollectLogsPayloadH\x00R\vcollectLogsB\t\n" +
 	"\apayload\"\x89\x01\n" +
 	"\x10JobResultPayload\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x120\n" +
@@ -1992,7 +2225,24 @@ const file_proto_node_agent_v1_node_agent_proto_rawDesc = "" +
 	"\x0euptime_seconds\x18\n" +
 	" \x01(\x03R\ruptimeSeconds\"*\n" +
 	"\x0eMetricResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess*^\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"\xa6\x01\n" +
+	"\x12CollectLogsPayload\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x18\n" +
+	"\asources\x18\x02 \x03(\tR\asources\x12(\n" +
+	"\x10lines_per_source\x18\x03 \x01(\x05R\x0elinesPerSource\x12-\n" +
+	"\x12include_containers\x18\x04 \x01(\bR\x11includeContainers\"\xae\x01\n" +
+	"\x14LogDiagnosticPayload\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12'\n" +
+	"\x0fdiagnostic_json\x18\x02 \x01(\tR\x0ediagnosticJson\x128\n" +
+	"\asources\x18\x03 \x03(\v2\x1e.node_agent.v1.LogSourceBundleR\asources\x12\x14\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error\"c\n" +
+	"\x0fLogSourceBundle\x12\x16\n" +
+	"\x06source\x18\x01 \x01(\tR\x06source\x12\x19\n" +
+	"\braw_logs\x18\x02 \x01(\tR\arawLogs\x12\x1d\n" +
+	"\n" +
+	"line_count\x18\x03 \x01(\x05R\tlineCount*^\n" +
 	"\vCommandType\x12\x18\n" +
 	"\x14COMMAND_TYPE_DEFAULT\x10\x00\x12\x17\n" +
 	"\x13COMMAND_TYPE_CUSTOM\x10\x01\x12\x1c\n" +
@@ -2022,7 +2272,7 @@ func file_proto_node_agent_v1_node_agent_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_node_agent_v1_node_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_proto_node_agent_v1_node_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_proto_node_agent_v1_node_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_proto_node_agent_v1_node_agent_proto_goTypes = []any{
 	(CommandType)(0),                    // 0: node_agent.v1.CommandType
 	(ProfileType)(0),                    // 1: node_agent.v1.ProfileType
@@ -2049,6 +2299,9 @@ var file_proto_node_agent_v1_node_agent_proto_goTypes = []any{
 	(*ContainerListPayload)(nil),        // 22: node_agent.v1.ContainerListPayload
 	(*MetricRequest)(nil),               // 23: node_agent.v1.MetricRequest
 	(*MetricResponse)(nil),              // 24: node_agent.v1.MetricResponse
+	(*CollectLogsPayload)(nil),          // 25: node_agent.v1.CollectLogsPayload
+	(*LogDiagnosticPayload)(nil),        // 26: node_agent.v1.LogDiagnosticPayload
+	(*LogSourceBundle)(nil),             // 27: node_agent.v1.LogSourceBundle
 }
 var file_proto_node_agent_v1_node_agent_proto_depIdxs = []int32{
 	0,  // 0: node_agent.v1.RegisterCommandRequest.type:type_name -> node_agent.v1.CommandType
@@ -2059,30 +2312,33 @@ var file_proto_node_agent_v1_node_agent_proto_depIdxs = []int32{
 	16, // 5: node_agent.v1.NodeMessage.health_result:type_name -> node_agent.v1.HealthCheckResultPayload
 	18, // 6: node_agent.v1.NodeMessage.profile_data:type_name -> node_agent.v1.ProfileDataPayload
 	22, // 7: node_agent.v1.NodeMessage.container_list:type_name -> node_agent.v1.ContainerListPayload
-	10, // 8: node_agent.v1.ServerMessage.execute_job:type_name -> node_agent.v1.ExecuteJobPayload
-	11, // 9: node_agent.v1.ServerMessage.stream_logs:type_name -> node_agent.v1.StreamLogsPayload
-	12, // 10: node_agent.v1.ServerMessage.stop_logs:type_name -> node_agent.v1.StopLogsPayload
-	14, // 11: node_agent.v1.ServerMessage.configure_health_check:type_name -> node_agent.v1.ConfigureHealthCheckPayload
-	15, // 12: node_agent.v1.ServerMessage.stop_health_check:type_name -> node_agent.v1.StopHealthCheckPayload
-	17, // 13: node_agent.v1.ServerMessage.request_profile:type_name -> node_agent.v1.RequestProfilePayload
-	19, // 14: node_agent.v1.ServerMessage.stream_containers:type_name -> node_agent.v1.StreamContainersPayload
-	20, // 15: node_agent.v1.ServerMessage.stop_containers:type_name -> node_agent.v1.StopContainersPayload
-	2,  // 16: node_agent.v1.JobResultPayload.status:type_name -> node_agent.v1.JobStatus
-	0,  // 17: node_agent.v1.ExecuteJobPayload.command_type:type_name -> node_agent.v1.CommandType
-	1,  // 18: node_agent.v1.RequestProfilePayload.profile_type:type_name -> node_agent.v1.ProfileType
-	1,  // 19: node_agent.v1.ProfileDataPayload.profile_type:type_name -> node_agent.v1.ProfileType
-	21, // 20: node_agent.v1.ContainerListPayload.containers:type_name -> node_agent.v1.ContainerInfo
-	3,  // 21: node_agent.v1.NodeAgentService.RegisterCommands:input_type -> node_agent.v1.RegisterCommandRequest
-	5,  // 22: node_agent.v1.NodeAgentService.Connect:input_type -> node_agent.v1.NodeMessage
-	23, // 23: node_agent.v1.NodeAgentService.ReportMetrics:input_type -> node_agent.v1.MetricRequest
-	4,  // 24: node_agent.v1.NodeAgentService.RegisterCommands:output_type -> node_agent.v1.RegisterCommandsResponse
-	7,  // 25: node_agent.v1.NodeAgentService.Connect:output_type -> node_agent.v1.ServerMessage
-	24, // 26: node_agent.v1.NodeAgentService.ReportMetrics:output_type -> node_agent.v1.MetricResponse
-	24, // [24:27] is the sub-list for method output_type
-	21, // [21:24] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	26, // 8: node_agent.v1.NodeMessage.log_diagnostic:type_name -> node_agent.v1.LogDiagnosticPayload
+	10, // 9: node_agent.v1.ServerMessage.execute_job:type_name -> node_agent.v1.ExecuteJobPayload
+	11, // 10: node_agent.v1.ServerMessage.stream_logs:type_name -> node_agent.v1.StreamLogsPayload
+	12, // 11: node_agent.v1.ServerMessage.stop_logs:type_name -> node_agent.v1.StopLogsPayload
+	14, // 12: node_agent.v1.ServerMessage.configure_health_check:type_name -> node_agent.v1.ConfigureHealthCheckPayload
+	15, // 13: node_agent.v1.ServerMessage.stop_health_check:type_name -> node_agent.v1.StopHealthCheckPayload
+	17, // 14: node_agent.v1.ServerMessage.request_profile:type_name -> node_agent.v1.RequestProfilePayload
+	19, // 15: node_agent.v1.ServerMessage.stream_containers:type_name -> node_agent.v1.StreamContainersPayload
+	20, // 16: node_agent.v1.ServerMessage.stop_containers:type_name -> node_agent.v1.StopContainersPayload
+	25, // 17: node_agent.v1.ServerMessage.collect_logs:type_name -> node_agent.v1.CollectLogsPayload
+	2,  // 18: node_agent.v1.JobResultPayload.status:type_name -> node_agent.v1.JobStatus
+	0,  // 19: node_agent.v1.ExecuteJobPayload.command_type:type_name -> node_agent.v1.CommandType
+	1,  // 20: node_agent.v1.RequestProfilePayload.profile_type:type_name -> node_agent.v1.ProfileType
+	1,  // 21: node_agent.v1.ProfileDataPayload.profile_type:type_name -> node_agent.v1.ProfileType
+	21, // 22: node_agent.v1.ContainerListPayload.containers:type_name -> node_agent.v1.ContainerInfo
+	27, // 23: node_agent.v1.LogDiagnosticPayload.sources:type_name -> node_agent.v1.LogSourceBundle
+	3,  // 24: node_agent.v1.NodeAgentService.RegisterCommands:input_type -> node_agent.v1.RegisterCommandRequest
+	5,  // 25: node_agent.v1.NodeAgentService.Connect:input_type -> node_agent.v1.NodeMessage
+	23, // 26: node_agent.v1.NodeAgentService.ReportMetrics:input_type -> node_agent.v1.MetricRequest
+	4,  // 27: node_agent.v1.NodeAgentService.RegisterCommands:output_type -> node_agent.v1.RegisterCommandsResponse
+	7,  // 28: node_agent.v1.NodeAgentService.Connect:output_type -> node_agent.v1.ServerMessage
+	24, // 29: node_agent.v1.NodeAgentService.ReportMetrics:output_type -> node_agent.v1.MetricResponse
+	27, // [27:30] is the sub-list for method output_type
+	24, // [24:27] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_proto_node_agent_v1_node_agent_proto_init() }
@@ -2098,6 +2354,7 @@ func file_proto_node_agent_v1_node_agent_proto_init() {
 		(*NodeMessage_HealthResult)(nil),
 		(*NodeMessage_ProfileData)(nil),
 		(*NodeMessage_ContainerList)(nil),
+		(*NodeMessage_LogDiagnostic)(nil),
 	}
 	file_proto_node_agent_v1_node_agent_proto_msgTypes[4].OneofWrappers = []any{
 		(*ServerMessage_ExecuteJob)(nil),
@@ -2108,6 +2365,7 @@ func file_proto_node_agent_v1_node_agent_proto_init() {
 		(*ServerMessage_RequestProfile)(nil),
 		(*ServerMessage_StreamContainers)(nil),
 		(*ServerMessage_StopContainers)(nil),
+		(*ServerMessage_CollectLogs)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -2115,7 +2373,7 @@ func file_proto_node_agent_v1_node_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_node_agent_v1_node_agent_proto_rawDesc), len(file_proto_node_agent_v1_node_agent_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   22,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -319,6 +319,8 @@ func (c *GRPCClient) connectStream(ctx context.Context, client pb.NodeAgentServi
 			c.startContainerStream(streamCtx, results)
 		case *pb.ServerMessage_StopContainers:
 			c.stopContainerStream()
+		case *pb.ServerMessage_CollectLogs:
+			go c.handleCollectLogs(streamCtx, p.CollectLogs, results)
 		case *pb.ServerMessage_ConfigureHealthCheck:
 			cfg := healthCheckConfig{
 				MonitorID:          p.ConfigureHealthCheck.GetMonitorId(),

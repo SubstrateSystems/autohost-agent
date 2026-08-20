@@ -144,4 +144,6 @@ func RegisterAll(r *Registry) {
 	r.Register("caddy.status", &CaddyStatus{})
 	r.Register("docker.volume.backup", &DockerVolumeBackup{})
 	r.Register("docker.volume.restore", &DockerVolumeRestore{})
+	r.Register("docker.pg.backup", &DockerPgBackup{})
+	r.Register("docker.pg.restore", &DockerPgRestore{})
 }

@@ -101,7 +101,7 @@ func (c *DockerVolumeRestore) ExecuteWithOutput(ctx context.Context, payload map
 		cleanTargets = append(cleanTargets, fmt.Sprintf("%s/* %s/.[!.]*", mountTarget, mountTarget))
 	}
 
-	shScript := fmt.Sprintf("rm -rf %s 2>/dev/null || true; tar -xzf - -C /target", strings.Join(cleanTargets, " "))
+	shScript := fmt.Sprintf("rm -rf %s 2>/dev/null || true; tar -xzf - --numeric-owner -C /target", strings.Join(cleanTargets, " "))
 	dockerArgs = append(dockerArgs, "alpine", "sh", "-c", shScript)
 
 	cmd := exec.CommandContext(ctx, "docker", dockerArgs...)
