@@ -2,11 +2,13 @@ package commands
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -56,9 +58,15 @@ func (c *DockerPgBackup) ExecuteWithOutput(ctx context.Context, payload map[stri
 		return "", fmt.Errorf("invalid S3/R2 storage configuration")
 	}
 
+	pgEnv := getPgContainerEnv(ctx, req.ContainerName)
+
 	pgUser := req.PgUser
 	if pgUser == "" {
-		pgUser = "postgres"
+		if pgEnv.User != "" {
+			pgUser = pgEnv.User
+		} else {
+			pgUser = "postgres"
+		}
 	}
 
 	// Create temp file for the compressed SQL dump
@@ -70,29 +78,42 @@ func (c *DockerPgBackup) ExecuteWithOutput(ctx context.Context, payload map[stri
 	defer os.Remove(dumpFilePath)
 	defer tmpFile.Close()
 
-	// Build the docker exec command:
-	// For a specific database: docker exec <container> pg_dump -U <user> <database> | gzip
-	// For all databases:       docker exec <container> pg_dumpall -U <user> | gzip
-	//
-	// We pipe through gzip via shell to compress the output.
+	// Build the docker exec command args:
+	// For a specific database: pg_dump --clean --if-exists -U <user> <database>
+	// For all databases:       pg_dumpall --clean --if-exists -U <user>
 	var dumpCmd string
 	if req.Database != "" {
-		dumpCmd = fmt.Sprintf("pg_dump -U %s %s", pgUser, req.Database)
+		dumpCmd = fmt.Sprintf("pg_dump --clean --if-exists -U %s %s", pgUser, req.Database)
 	} else {
-		dumpCmd = fmt.Sprintf("pg_dumpall -U %s", pgUser)
+		dumpCmd = fmt.Sprintf("pg_dumpall --clean --if-exists -U %s", pgUser)
 	}
 
-	// Execute: docker exec <container> sh -c '<dumpCmd>' | gzip > tmpFile
-	// We use sh -c on the host side to pipe gzip
-	shellCmd := fmt.Sprintf("docker exec %s sh -c '%s' | gzip", req.ContainerName, dumpCmd)
-	cmd := exec.CommandContext(ctx, "sh", "-c", shellCmd)
-	cmd.Stdout = tmpFile
+	var envArgs []string
+	if pgEnv.Password != "" {
+		envArgs = append(envArgs, "-e", fmt.Sprintf("PGPASSWORD=%s", pgEnv.Password))
+	}
+
+	dockerArgs := []string{"exec"}
+	dockerArgs = append(dockerArgs, envArgs...)
+	dockerArgs = append(dockerArgs, req.ContainerName, "sh", "-c", dumpCmd)
+
+	gw := gzip.NewWriter(tmpFile)
+	cmd := exec.CommandContext(ctx, "docker", dockerArgs...)
+	cmd.Stdout = gw
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("pg_dump failed: %s (%w)", errBuf.String(), err)
-	}
+
+	runErr := cmd.Run()
+	_ = gw.Close()
 	_ = tmpFile.Close()
+
+	stderrMsg := strings.TrimSpace(errBuf.String())
+	if runErr != nil {
+		if stderrMsg != "" {
+			return "", fmt.Errorf("pg_dump failed: %s (%w)", stderrMsg, runErr)
+		}
+		return "", fmt.Errorf("pg_dump failed: %w", runErr)
+	}
 
 	fi, err := os.Stat(dumpFilePath)
 	if err != nil {
@@ -102,6 +123,9 @@ func (c *DockerPgBackup) ExecuteWithOutput(ctx context.Context, payload map[stri
 
 	// Sanity check: pg_dump with errors can still produce a tiny output
 	if fileSizeBytes < 50 {
+		if stderrMsg != "" {
+			return "", fmt.Errorf("pg_dump produced a suspiciously small output (%d bytes): %s", fileSizeBytes, stderrMsg)
+		}
 		return "", fmt.Errorf("pg_dump produced a suspiciously small output (%d bytes), possible error in dump", fileSizeBytes)
 	}
 
@@ -124,4 +148,35 @@ func (c *DockerPgBackup) ExecuteWithOutput(ctx context.Context, payload map[stri
 
 	resBytes, _ := json.Marshal(result)
 	return string(resBytes), nil
+}
+
+type PgContainerEnv struct {
+	User     string
+	Password string
+	Database string
+}
+
+// getPgContainerEnv inspects container env vars to extract POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB if present.
+func getPgContainerEnv(ctx context.Context, containerName string) PgContainerEnv {
+	cmd := exec.CommandContext(ctx, "docker", "inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", containerName)
+	out, err := cmd.Output()
+	if err != nil {
+		return PgContainerEnv{}
+	}
+
+	var res PgContainerEnv
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "POSTGRES_PASSWORD=") {
+			res.Password = strings.TrimPrefix(line, "POSTGRES_PASSWORD=")
+		} else if strings.HasPrefix(line, "PGPASSWORD=") {
+			res.Password = strings.TrimPrefix(line, "PGPASSWORD=")
+		} else if strings.HasPrefix(line, "POSTGRES_USER=") {
+			res.User = strings.TrimPrefix(line, "POSTGRES_USER=")
+		} else if strings.HasPrefix(line, "POSTGRES_DB=") {
+			res.Database = strings.TrimPrefix(line, "POSTGRES_DB=")
+		}
+	}
+	return res
 }
