@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"time"
 
+	"autohost-agent/internal/infra/docker"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -90,14 +92,15 @@ func (c *DockerVolumeBackup) ExecuteWithOutput(ctx context.Context, payload map[
 	defer tmpFile.Close()
 
 	if req.PauseContainer {
-		pauseCmd := exec.CommandContext(ctx, "docker", "pause", req.ContainerName)
-		if output, err := pauseCmd.CombinedOutput(); err != nil {
-			return "", fmt.Errorf("docker pause %s failed: %s (%w)", req.ContainerName, string(output), err)
+		cli, cliErr := docker.GetClient()
+		if cliErr == nil {
+			if err := cli.ContainerPause(ctx, req.ContainerName); err != nil {
+				return "", fmt.Errorf("docker pause %s failed: %w", req.ContainerName, err)
+			}
+			defer func() {
+				_ = cli.ContainerUnpause(context.Background(), req.ContainerName)
+			}()
 		}
-		defer func() {
-			unpauseCmd := exec.Command("docker", "unpause", req.ContainerName)
-			_ = unpauseCmd.Run()
-		}()
 	}
 
 	dockerArgs := []string{"run", "--rm"}
@@ -144,26 +147,18 @@ func (c *DockerVolumeBackup) ExecuteWithOutput(ctx context.Context, payload map[
 }
 
 func inspectContainerVolumes(ctx context.Context, containerName string) ([]string, error) {
-	cmd := exec.CommandContext(ctx, "docker", "inspect", "--format", "{{json .Mounts}}", containerName)
-	output, err := cmd.Output()
+	cli, err := docker.GetClient()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("docker client: %w", err)
 	}
 
-	type mountEntry struct {
-		Name        string `json:"Name"`
-		Source      string `json:"Source"`
-		Destination string `json:"Destination"`
-		Type        string `json:"Type"`
-	}
-
-	var mounts []mountEntry
-	if err := json.Unmarshal(output, &mounts); err != nil {
-		return nil, err
+	inspect, err := cli.ContainerInspect(ctx, containerName)
+	if err != nil {
+		return nil, fmt.Errorf("docker inspect %s: %w", containerName, err)
 	}
 
 	var volumes []string
-	for _, m := range mounts {
+	for _, m := range inspect.Mounts {
 		if m.Name != "" {
 			volumes = append(volumes, m.Name)
 		} else if m.Source != "" {

@@ -14,9 +14,12 @@ import (
 	"strings"
 	"time"
 
+	"autohost-agent/internal/infra/docker"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/docker/docker/api/types/container"
 )
 
 // DockerVolumeRestore implements CommandWithOutput to download a backup from S3 / R2 and restore it to Docker volumes.
@@ -85,13 +88,14 @@ func (c *DockerVolumeRestore) ExecuteWithOutput(ctx context.Context, payload map
 		return "", fmt.Errorf("S3 download failed: %w", err)
 	}
 
-	stopCmd := exec.CommandContext(ctx, "docker", "stop", req.ContainerName)
-	_ = stopCmd.Run()
-
-	defer func() {
-		startCmd := exec.Command("docker", "start", req.ContainerName)
-		_ = startCmd.Run()
-	}()
+	cli, cliErr := docker.GetClient()
+	if cliErr == nil {
+		stopTimeout := 15
+		_ = cli.ContainerStop(ctx, req.ContainerName, container.StopOptions{Timeout: &stopTimeout})
+		defer func() {
+			_ = cli.ContainerStart(context.Background(), req.ContainerName, container.StartOptions{})
+		}()
+	}
 
 	dockerArgs := []string{"run", "-i", "--rm"}
 	var cleanTargets []string

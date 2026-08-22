@@ -4,11 +4,14 @@ import (
 	"autohost-agent/internal/domain"
 	"autohost-agent/pkg/dir"
 	"autohost-agent/pkg/shell"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/docker/docker/api/types/container"
 )
 
 func Stop(appName domain.AppName) error {
@@ -58,13 +61,22 @@ func Remove(appName domain.AppName) error {
 }
 
 func ListContainers() error {
-	cmd := exec.Command("docker", "ps", "--format", "{{.Names}}\t{{.Status}}")
-	out, err := cmd.Output()
+	cli, err := GetClient()
+	if err != nil {
+		return err
+	}
+	containers, err := cli.ContainerList(context.Background(), container.ListOptions{})
 	if err != nil {
 		return err
 	}
 	fmt.Println("Contenedores en ejecución:")
-	fmt.Println(string(out))
+	for _, c := range containers {
+		name := ""
+		if len(c.Names) > 0 {
+			name = strings.TrimPrefix(c.Names[0], "/")
+		}
+		fmt.Printf("%s\t%s\n", name, c.Status)
+	}
 	return nil
 }
 

@@ -1,22 +1,24 @@
 package transport
 
 import (
-	"bufio"
 	"context"
+	"io"
 	"log"
-	"os/exec"
-	"strings"
 	"time"
 
 	"autohost-agent/internal/commands"
 	pb "autohost-agent/internal/grpc/nodepb"
+	"autohost-agent/internal/infra/docker"
+
+	"github.com/docker/docker/api/types/events"
+	"github.com/docker/docker/api/types/filters"
 )
 
 // ─── Container streaming ──────────────────────────────────────────────────────
 
 // startContainerStream launches a goroutine that sends an initial
-// ContainerListPayload snapshot and then watches `docker events` to resend on
-// every container lifecycle change.  Any previous stream is stopped first.
+// ContainerListPayload snapshot and then watches Docker Engine events to resend on
+// every container lifecycle change. Any previous stream is stopped first.
 func (c *GRPCClient) startContainerStream(ctx context.Context, results chan<- *pb.NodeMessage) {
 	c.stopContainerStream() // cancel any running stream
 
@@ -43,11 +45,7 @@ func (c *GRPCClient) stopContainerStream() {
 // It sends an initial snapshot then keeps pushing updates:
 //   - every periodicInterval (ticker) to refresh CPU/mem stats, and
 //   - whenever a Docker lifecycle event occurs (start, stop, die, …).
-//
-// The docker events watcher goroutine (watchDockerEvents) restarts the
-// process automatically on unexpected exits, so this loop never terminates
-// due to a transient docker events failure.
-func (c *GRPCClient) runContainerStream(ctx context.Context, cancel context.CancelFunc, out chan<- *pb.NodeMessage) {
+func cGRPCRunContainerStream(c *GRPCClient, ctx context.Context, cancel context.CancelFunc, out chan<- *pb.NodeMessage) {
 	defer cancel()
 
 	// Initial snapshot.
@@ -66,8 +64,7 @@ func (c *GRPCClient) runContainerStream(ctx context.Context, cancel context.Canc
 	pending := false
 
 	// eventSig is written to by watchDockerEvents. It is NEVER closed,
-	// so the select loop never sees a !ok case and never exits due to
-	// docker events exiting unexpectedly.
+	// so the select loop never sees a !ok case and never exits.
 	eventSig := make(chan struct{}, 1)
 	go c.watchDockerEvents(ctx, eventSig)
 
@@ -92,9 +89,13 @@ func (c *GRPCClient) runContainerStream(ctx context.Context, cancel context.Canc
 	}
 }
 
-// watchDockerEvents runs `docker events` in a loop, writing to sig on every
-// container lifecycle event. It restarts the process with exponential back-off
-// whenever it exits unexpectedly. The goroutine exits only when ctx is done.
+func (c *GRPCClient) runContainerStream(ctx context.Context, cancel context.CancelFunc, out chan<- *pb.NodeMessage) {
+	cGRPCRunContainerStream(c, ctx, cancel, out)
+}
+
+// watchDockerEvents listens to the Docker Engine API event stream via UNIX socket,
+// writing to sig on every container lifecycle event. It reconnects with exponential
+// back-off on transient disconnects.
 func (c *GRPCClient) watchDockerEvents(ctx context.Context, sig chan<- struct{}) {
 	backoff := time.Second
 	const maxBackoff = 30 * time.Second
@@ -104,64 +105,67 @@ func (c *GRPCClient) watchDockerEvents(ctx context.Context, sig chan<- struct{})
 			return
 		}
 
-		eventsCmd := exec.CommandContext(ctx, "docker", "events",
-			"--filter", "type=container",
-			"--filter", "event=start",
-			"--filter", "event=die",
-			"--filter", "event=stop",
-			"--filter", "event=pause",
-			"--filter", "event=unpause",
-			"--filter", "event=create",
-			"--filter", "event=destroy",
-			"--filter", "event=rename",
-			"--format", "{{.Action}}",
+		cli, err := docker.GetClient()
+		if err != nil {
+			log.Printf("⚠️  container stream: get docker client: %v", err)
+			if !sleepWithBackoff(ctx, &backoff, maxBackoff) {
+				return
+			}
+			continue
+		}
+
+		eventFilters := filters.NewArgs(
+			filters.Arg("type", "container"),
+			filters.Arg("event", "start"),
+			filters.Arg("event", "die"),
+			filters.Arg("event", "stop"),
+			filters.Arg("event", "pause"),
+			filters.Arg("event", "unpause"),
+			filters.Arg("event", "create"),
+			filters.Arg("event", "destroy"),
+			filters.Arg("event", "rename"),
 		)
 
-		var stderrBuf strings.Builder
-		stdout, err := eventsCmd.StdoutPipe()
-		if err != nil {
-			log.Printf("⚠️  container stream: stdout pipe: %v", err)
-			if !sleepWithBackoff(ctx, &backoff, maxBackoff) {
-				return
-			}
-			continue
-		}
-		eventsCmd.Stderr = &stderrBuf
+		eventCtx, eventCancel := context.WithCancel(ctx)
+		msgChan, errChan := cli.Events(eventCtx, events.ListOptions{Filters: eventFilters})
 
-		if err := eventsCmd.Start(); err != nil {
-			log.Printf("⚠️  container stream: docker events start: %v", err)
-			if !sleepWithBackoff(ctx, &backoff, maxBackoff) {
-				return
-			}
-			continue
-		}
-
-		scanner := bufio.NewScanner(stdout)
-		scannedAny := false
-		for scanner.Scan() {
-			scannedAny = true
+		hadEvents := false
+	eventLoop:
+		for {
 			select {
-			case sig <- struct{}{}:
-			default: // already has a pending signal — skip
+			case <-ctx.Done():
+				eventCancel()
+				return
+
+			case _, ok := <-msgChan:
+				if !ok {
+					break eventLoop
+				}
+				hadEvents = true
+				select {
+				case sig <- struct{}{}:
+				default: // already has a pending signal — skip
+				}
+
+			case err, ok := <-errChan:
+				if !ok || err == nil {
+					break eventLoop
+				}
+				if ctx.Err() == nil && err != io.EOF && err != context.Canceled {
+					log.Printf("⚠️  container stream: docker events error: %v", err)
+				}
+				break eventLoop
 			}
 		}
-		waitErr := eventsCmd.Wait()
+
+		eventCancel()
 
 		if ctx.Err() != nil {
 			return
 		}
 
-		if scannedAny {
+		if hadEvents {
 			backoff = time.Second // reset backoff if it had successfully received events
-		}
-
-		errDetail := strings.TrimSpace(stderrBuf.String())
-		if errDetail != "" {
-			log.Printf("⚠️  container stream: docker events exited: %s (err: %v)", errDetail, waitErr)
-		} else if waitErr != nil {
-			log.Printf("⚠️  container stream: docker events exited unexpectedly (err: %v)", waitErr)
-		} else {
-			log.Printf("⚠️  container stream: docker events exited unexpectedly, restarting")
 		}
 
 		if !sleepWithBackoff(ctx, &backoff, maxBackoff) {

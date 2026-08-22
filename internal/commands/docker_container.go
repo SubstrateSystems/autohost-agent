@@ -5,9 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
+	"io"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
+
+	"autohost-agent/internal/infra/docker"
+
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/pkg/stdcopy"
 )
 
 // safeContainerName only allows characters valid in Docker container names,
@@ -18,11 +25,12 @@ var safeContainerName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_\-.]{0,127}$`
 //
 // Supported patterns:
 //
-//	container.list                  → docker ps -a with live stats (JSON array)
-//	container.start.<name>          → docker start <name>
-//	container.stop.<name>           → docker stop <name>
-//	container.restart.<name>        → docker restart <name>
-//	container.stats.<name>          → docker stats --no-stream <name> (JSON)
+//	container.list                  → container list with live stats (JSON array)
+//	container.start.<name>          → container start
+//	container.stop.<name>           → container stop
+//	container.restart.<name>        → container restart
+//	container.stats.<name>          → container stats (JSON)
+//	container.logs.<name>           → container logs (last 100 lines)
 func execContainerCommand(ctx context.Context, jobType string) ExecuteResult {
 	// jobType examples: "container.list", "container.restart.my-app"
 	parts := strings.SplitN(jobType, ".", 3)
@@ -63,14 +71,7 @@ func execContainerCommand(ctx context.Context, jobType string) ExecuteResult {
 		if !safeContainerName.MatchString(name) {
 			return ExecuteResult{Err: fmt.Errorf("container logs: invalid container name %q", name)}
 		}
-		cmd := exec.CommandContext(ctx, "docker", "logs", "--tail", "100", name)
-		var buf bytes.Buffer
-		cmd.Stdout = &buf
-		cmd.Stderr = &buf
-		if err := cmd.Run(); err != nil {
-			return ExecuteResult{Output: buf.String(), Err: fmt.Errorf("docker logs %s: %w", name, err)}
-		}
-		return ExecuteResult{Output: buf.String()}
+		return containerLogs(ctx, name)
 
 	default:
 		return ExecuteResult{Err: fmt.Errorf("unknown container action %q in %q", action, jobType)}
@@ -131,70 +132,76 @@ func ContainerListSnapshot(ctx context.Context) ContainerSnapshotResult {
 	return ContainerSnapshotResult{Containers: entries}
 }
 
-// rawStats is used to parse the JSON output of docker stats.
-type rawStats struct {
-	Name    string `json:"name"`
-	CPU     string `json:"cpu"`
-	Mem     string `json:"mem"`
-	MemPerc string `json:"memPerc"`
-}
-
-// containerListRaw runs docker ps + docker stats and returns the raw struct
-// slice.  It is the shared core used by both containerList (JSON output for
-// jobs) and ContainerListSnapshot (struct output for gRPC streaming).
+// containerListRaw queries the Docker daemon via the UNIX socket for all containers
+// and collects live stats concurrently for running containers.
 func containerListRaw(ctx context.Context) ([]containerInfo, error) {
-	psCmd := exec.CommandContext(ctx, "docker", "ps", "-a",
-		"--format", "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.State}}\t{{.Status}}")
-	psOut, err := psCmd.Output()
+	cli, err := docker.GetClient()
 	if err != nil {
-		return nil, fmt.Errorf("docker ps: %w", err)
+		return nil, fmt.Errorf("docker client: %w", err)
 	}
 
-	statsMap := map[string]rawStats{}
-	statsCmd := exec.CommandContext(ctx, "docker", "stats", "--no-stream",
-		"--format", `{"name":"{{.Name}}","cpu":"{{.CPUPerc}}","mem":"{{.MemUsage}}","memPerc":"{{.MemPerc}}"}`)
-	if statsOut, statsErr := statsCmd.Output(); statsErr == nil {
-		for _, line := range strings.Split(strings.TrimSpace(string(statsOut)), "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-			var s rawStats
-			if jsonErr := json.Unmarshal([]byte(line), &s); jsonErr == nil && s.Name != "" {
-				statsMap[strings.TrimPrefix(s.Name, "/")] = s
-			}
+	containers, err := cli.ContainerList(ctx, container.ListOptions{All: true})
+	if err != nil {
+		return nil, fmt.Errorf("docker list containers: %w", err)
+	}
+
+	result := make([]containerInfo, len(containers))
+	var wg sync.WaitGroup
+
+	for i, c := range containers {
+		id := c.ID
+		if len(id) > 12 {
+			id = id[:12]
+		}
+
+		name := ""
+		if len(c.Names) > 0 {
+			name = strings.TrimPrefix(c.Names[0], "/")
+		}
+
+		result[i] = containerInfo{
+			ID:     id,
+			Name:   name,
+			Image:  c.Image,
+			State:  c.State,
+			Status: c.Status,
+		}
+
+		// Collect live stats for running containers
+		if c.State == "running" {
+			wg.Add(1)
+			go func(idx int, containerID string) {
+				defer wg.Done()
+
+				statsCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+				defer cancel()
+
+				resp, err := cli.ContainerStats(statsCtx, containerID, false)
+				if err != nil {
+					return
+				}
+				defer resp.Body.Close()
+
+				statsJSON, err := docker.DecodeStats(resp.Body)
+				if err != nil {
+					return
+				}
+
+				cpuPercent := docker.CalculateCPUPercent(statsJSON)
+				used, limit, memPerc := docker.CalculateMemUsageAndLimit(statsJSON)
+
+				result[idx].CPU = docker.FormatPercent(cpuPercent)
+				result[idx].Mem = docker.FormatMemString(used, limit)
+				result[idx].MemPerc = docker.FormatPercent(memPerc)
+			}(i, c.ID)
 		}
 	}
 
-	var result []containerInfo
-	for _, line := range strings.Split(strings.TrimSpace(string(psOut)), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		parts := strings.SplitN(line, "\t", 5)
-		if len(parts) != 5 {
-			continue
-		}
-		c := containerInfo{
-			ID:     parts[0],
-			Name:   parts[1],
-			Image:  parts[2],
-			State:  parts[3],
-			Status: parts[4],
-		}
-		if s, ok := statsMap[parts[1]]; ok {
-			c.CPU = s.CPU
-			c.Mem = s.Mem
-			c.MemPerc = s.MemPerc
-		}
-		result = append(result, c)
-	}
+	wg.Wait()
 	return result, nil
 }
 
-// containerList runs docker ps -a and merges live stats (cpu, mem, memPerc)
-// for running containers via docker stats --no-stream. Returns a JSON array.
+// containerList runs containerListRaw and returns a JSON array string.
 func containerList(ctx context.Context) ExecuteResult {
 	result, err := containerListRaw(ctx)
 	if err != nil {
@@ -211,26 +218,112 @@ func containerList(ctx context.Context) ExecuteResult {
 	return ExecuteResult{Output: string(b)}
 }
 
-// containerAction runs docker start/stop/restart <name>.
-// exec.Command is used directly with individual args — not a shell — so the
-// container name cannot be used to inject additional shell commands.
+// containerAction executes start/stop/restart directly on the Docker daemon.
 func containerAction(ctx context.Context, action, name string) ExecuteResult {
-	cmd := exec.CommandContext(ctx, "docker", action, name)
-	var buf bytes.Buffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
-	if err := cmd.Run(); err != nil {
-		return ExecuteResult{Output: buf.String(), Err: fmt.Errorf("docker %s %s: %w", action, name, err)}
+	cli, err := docker.GetClient()
+	if err != nil {
+		return ExecuteResult{Err: fmt.Errorf("docker client: %w", err)}
 	}
-	return ExecuteResult{Output: buf.String()}
+
+	stopTimeout := 15 // seconds
+	switch action {
+	case "start":
+		if err := cli.ContainerStart(ctx, name, container.StartOptions{}); err != nil {
+			return ExecuteResult{Err: fmt.Errorf("docker start %s: %w", name, err)}
+		}
+	case "stop":
+		if err := cli.ContainerStop(ctx, name, container.StopOptions{Timeout: &stopTimeout}); err != nil {
+			return ExecuteResult{Err: fmt.Errorf("docker stop %s: %w", name, err)}
+		}
+	case "restart":
+		if err := cli.ContainerRestart(ctx, name, container.StopOptions{Timeout: &stopTimeout}); err != nil {
+			return ExecuteResult{Err: fmt.Errorf("docker restart %s: %w", name, err)}
+		}
+	default:
+		return ExecuteResult{Err: fmt.Errorf("unsupported action %q", action)}
+	}
+
+	return ExecuteResult{Output: fmt.Sprintf("container %s %sed", name, action)}
 }
 
+// containerStats returns stats for a specific container in JSON format.
 func containerStats(ctx context.Context, name string) ExecuteResult {
-	cmd := exec.CommandContext(ctx, "docker", "stats", "--no-stream", "--format",
-		`{"name":"{{.Name}}","cpu":"{{.CPUPerc}}","mem":"{{.MemUsage}}"}`, name)
-	out, err := cmd.Output()
+	cli, err := docker.GetClient()
+	if err != nil {
+		return ExecuteResult{Err: fmt.Errorf("docker client: %w", err)}
+	}
+
+	resp, err := cli.ContainerStats(ctx, name, false)
 	if err != nil {
 		return ExecuteResult{Err: fmt.Errorf("docker stats %s: %w", name, err)}
 	}
+	defer resp.Body.Close()
+
+	statsJSON, err := docker.DecodeStats(resp.Body)
+	if err != nil {
+		return ExecuteResult{Err: fmt.Errorf("docker stats decode %s: %w", name, err)}
+	}
+
+	cpuPercent := docker.CalculateCPUPercent(statsJSON)
+	used, limit, memPerc := docker.CalculateMemUsageAndLimit(statsJSON)
+
+	type singleStats struct {
+		Name    string `json:"name"`
+		CPU     string `json:"cpu"`
+		Mem     string `json:"mem"`
+		MemPerc string `json:"memPerc"`
+	}
+
+	payload := singleStats{
+		Name:    name,
+		CPU:     docker.FormatPercent(cpuPercent),
+		Mem:     docker.FormatMemString(used, limit),
+		MemPerc: docker.FormatPercent(memPerc),
+	}
+
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return ExecuteResult{Err: fmt.Errorf("marshal stats %s: %w", name, err)}
+	}
 	return ExecuteResult{Output: string(out)}
+}
+
+// containerLogs retrieves the last 100 lines of logs using Docker Engine API,
+// correctly demultiplexing streams with stdcopy.StdCopy for non-TTY containers.
+func containerLogs(ctx context.Context, name string) ExecuteResult {
+	cli, err := docker.GetClient()
+	if err != nil {
+		return ExecuteResult{Err: fmt.Errorf("docker client: %w", err)}
+	}
+
+	inspect, err := cli.ContainerInspect(ctx, name)
+	if err != nil {
+		return ExecuteResult{Err: fmt.Errorf("docker inspect %s: %w", name, err)}
+	}
+
+	logsReader, err := cli.ContainerLogs(ctx, name, container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Tail:       "100",
+		Timestamps: false,
+	})
+	if err != nil {
+		return ExecuteResult{Err: fmt.Errorf("docker logs %s: %w", name, err)}
+	}
+	defer logsReader.Close()
+
+	if inspect.Config != nil && inspect.Config.Tty {
+		out, err := io.ReadAll(logsReader)
+		if err != nil {
+			return ExecuteResult{Err: fmt.Errorf("read logs: %w", err)}
+		}
+		return ExecuteResult{Output: string(out)}
+	}
+
+	var stdout, stderr bytes.Buffer
+	if _, err := stdcopy.StdCopy(&stdout, &stderr, logsReader); err != nil && err != io.EOF {
+		return ExecuteResult{Err: fmt.Errorf("demux logs %s: %w", name, err)}
+	}
+
+	return ExecuteResult{Output: stdout.String() + stderr.String()}
 }

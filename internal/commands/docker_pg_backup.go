@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"autohost-agent/internal/infra/docker"
 )
 
 // DockerPgBackup implements CommandWithOutput to create a PostgreSQL logical backup
@@ -158,24 +160,26 @@ type PgContainerEnv struct {
 
 // getPgContainerEnv inspects container env vars to extract POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB if present.
 func getPgContainerEnv(ctx context.Context, containerName string) PgContainerEnv {
-	cmd := exec.CommandContext(ctx, "docker", "inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", containerName)
-	out, err := cmd.Output()
+	cli, err := docker.GetClient()
 	if err != nil {
 		return PgContainerEnv{}
 	}
 
+	inspect, err := cli.ContainerInspect(ctx, containerName)
+	if err != nil || inspect.Config == nil {
+		return PgContainerEnv{}
+	}
+
 	var res PgContainerEnv
-	lines := strings.Split(string(out), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "POSTGRES_PASSWORD=") {
-			res.Password = strings.TrimPrefix(line, "POSTGRES_PASSWORD=")
-		} else if strings.HasPrefix(line, "PGPASSWORD=") {
-			res.Password = strings.TrimPrefix(line, "PGPASSWORD=")
-		} else if strings.HasPrefix(line, "POSTGRES_USER=") {
-			res.User = strings.TrimPrefix(line, "POSTGRES_USER=")
-		} else if strings.HasPrefix(line, "POSTGRES_DB=") {
-			res.Database = strings.TrimPrefix(line, "POSTGRES_DB=")
+	for _, env := range inspect.Config.Env {
+		if strings.HasPrefix(env, "POSTGRES_PASSWORD=") {
+			res.Password = strings.TrimPrefix(env, "POSTGRES_PASSWORD=")
+		} else if strings.HasPrefix(env, "PGPASSWORD=") {
+			res.Password = strings.TrimPrefix(env, "PGPASSWORD=")
+		} else if strings.HasPrefix(env, "POSTGRES_USER=") {
+			res.User = strings.TrimPrefix(env, "POSTGRES_USER=")
+		} else if strings.HasPrefix(env, "POSTGRES_DB=") {
+			res.Database = strings.TrimPrefix(env, "POSTGRES_DB=")
 		}
 	}
 	return res

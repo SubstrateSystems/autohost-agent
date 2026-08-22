@@ -4,13 +4,18 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os/exec"
 	"strings"
 	"time"
 
 	pb "autohost-agent/internal/grpc/nodepb"
+	"autohost-agent/internal/infra/docker"
 	"autohost-agent/internal/security"
+
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/pkg/stdcopy"
 )
 
 const (
@@ -83,25 +88,48 @@ func collectJournalctlLogs(ctx context.Context, unit string, lines int32) (*pb.L
 	}, nil
 }
 
-// collectDockerLogs runs `docker logs` in one-shot mode and returns sanitized
-// log output.
+// collectDockerLogs retrieves logs via Docker Engine API in one-shot mode and returns
+// sanitized log output, demultiplexing streams safely with stdcopy.StdCopy.
 func collectDockerLogs(ctx context.Context, containerName string, lines int32) (*pb.LogSourceBundle, error) {
 	ctx, cancel := context.WithTimeout(ctx, collectTimeout)
 	defer cancel()
 
-	args := []string{"logs", "--timestamps", "--tail", fmt.Sprintf("%d", lines), containerName}
-
-	cmd := exec.CommandContext(ctx, "docker", args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("docker logs %s: %w (stderr: %s)", containerName, err, stderr.String())
+	cli, err := docker.GetClient()
+	if err != nil {
+		return nil, fmt.Errorf("docker client: %w", err)
 	}
 
-	// Docker mixes stdout and stderr; merge both.
-	combined := stdout.String() + stderr.String()
+	inspect, err := cli.ContainerInspect(ctx, containerName)
+	if err != nil {
+		return nil, fmt.Errorf("docker inspect %s: %w", containerName, err)
+	}
+
+	logsReader, err := cli.ContainerLogs(ctx, containerName, container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Timestamps: true,
+		Tail:       fmt.Sprintf("%d", lines),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("docker logs %s: %w", containerName, err)
+	}
+	defer logsReader.Close()
+
+	var combined string
+	if inspect.Config != nil && inspect.Config.Tty {
+		raw, readErr := io.ReadAll(logsReader)
+		if readErr != nil {
+			return nil, fmt.Errorf("docker read logs %s: %w", containerName, readErr)
+		}
+		combined = string(raw)
+	} else {
+		var stdout, stderr bytes.Buffer
+		if _, copyErr := stdcopy.StdCopy(&stdout, &stderr, logsReader); copyErr != nil && copyErr != io.EOF {
+			return nil, fmt.Errorf("docker demux logs %s: %w", containerName, copyErr)
+		}
+		combined = stdout.String() + stderr.String()
+	}
+
 	rawLines := strings.Split(strings.TrimRight(combined, "\n"), "\n")
 
 	var sanitized []string
@@ -126,18 +154,23 @@ func listRunningContainers(ctx context.Context) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "docker", "ps", "--format", "{{.Names}}")
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
+	cli, err := docker.GetClient()
+	if err != nil {
+		return nil, fmt.Errorf("docker client: %w", err)
+	}
 
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("docker ps: %w", err)
+	containers, err := cli.ContainerList(ctx, container.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("docker list containers: %w", err)
 	}
 
 	var names []string
-	for _, name := range strings.Split(strings.TrimSpace(stdout.String()), "\n") {
-		if name != "" {
-			names = append(names, name)
+	for _, c := range containers {
+		if len(c.Names) > 0 {
+			name := strings.TrimPrefix(c.Names[0], "/")
+			if name != "" {
+				names = append(names, name)
+			}
 		}
 	}
 	return names, nil
