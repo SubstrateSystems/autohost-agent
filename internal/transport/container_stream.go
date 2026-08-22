@@ -114,7 +114,7 @@ func (c *GRPCClient) watchDockerEvents(ctx context.Context, sig chan<- struct{})
 			"--filter", "event=create",
 			"--filter", "event=destroy",
 			"--filter", "event=rename",
-			"--format", "{{.Status}}",
+			"--format", "{{.Action}}",
 		)
 
 		var stderrBuf strings.Builder
