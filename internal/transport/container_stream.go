@@ -5,6 +5,7 @@ import (
 	"context"
 	"log"
 	"os/exec"
+	"strings"
 	"time"
 
 	"autohost-agent/internal/commands"
@@ -116,6 +117,7 @@ func (c *GRPCClient) watchDockerEvents(ctx context.Context, sig chan<- struct{})
 			"--format", "{{.Status}}",
 		)
 
+		var stderrBuf strings.Builder
 		stdout, err := eventsCmd.StdoutPipe()
 		if err != nil {
 			log.Printf("⚠️  container stream: stdout pipe: %v", err)
@@ -124,6 +126,8 @@ func (c *GRPCClient) watchDockerEvents(ctx context.Context, sig chan<- struct{})
 			}
 			continue
 		}
+		eventsCmd.Stderr = &stderrBuf
+
 		if err := eventsCmd.Start(); err != nil {
 			log.Printf("⚠️  container stream: docker events start: %v", err)
 			if !sleepWithBackoff(ctx, &backoff, maxBackoff) {
@@ -131,21 +135,35 @@ func (c *GRPCClient) watchDockerEvents(ctx context.Context, sig chan<- struct{})
 			}
 			continue
 		}
-		backoff = time.Second // reset on successful start
 
 		scanner := bufio.NewScanner(stdout)
+		scannedAny := false
 		for scanner.Scan() {
+			scannedAny = true
 			select {
 			case sig <- struct{}{}:
 			default: // already has a pending signal — skip
 			}
 		}
-		eventsCmd.Wait() //nolint:errcheck
+		waitErr := eventsCmd.Wait()
 
 		if ctx.Err() != nil {
 			return
 		}
-		log.Printf("⚠️  container stream: docker events exited unexpectedly, restarting")
+
+		if scannedAny {
+			backoff = time.Second // reset backoff if it had successfully received events
+		}
+
+		errDetail := strings.TrimSpace(stderrBuf.String())
+		if errDetail != "" {
+			log.Printf("⚠️  container stream: docker events exited: %s (err: %v)", errDetail, waitErr)
+		} else if waitErr != nil {
+			log.Printf("⚠️  container stream: docker events exited unexpectedly (err: %v)", waitErr)
+		} else {
+			log.Printf("⚠️  container stream: docker events exited unexpectedly, restarting")
+		}
+
 		if !sleepWithBackoff(ctx, &backoff, maxBackoff) {
 			return
 		}
