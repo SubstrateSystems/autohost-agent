@@ -85,10 +85,10 @@ func HandleServiceCheck(
 			state.ConsecutiveFailures = 0
 			updateStatus(StatusHealthy)
 		} else {
-			if state.FailureStartedAt == nil {
+			if state.FailureStartedAt == nil || state.Status == StatusHealthy {
 				state.FailureStartedAt = &now
+				state.RecoveredAt = nil
 			}
-			state.RecoveredAt = nil
 			state.ConsecutiveFailures++
 			updateStatus(StatusDegraded)
 		}
@@ -101,20 +101,17 @@ func HandleServiceCheck(
 			state.RecoveredAt = &now
 		}
 		state.ConsecutiveFailures = 0
-		if state.Status != StatusCoolingDown {
-			state.RestartTimestamps = []int64{}
-			state.RecreateAttempts = 0
-		}
 		updateStatus(StatusHealthy)
 		logMsg("Healthcheck PASSED. Status: HEALTHY", "info")
 		return nil
 	}
 
 	// 2. Service is UNHEALTHY
-	if state.FailureStartedAt == nil {
+	if state.FailureStartedAt == nil || state.Status == StatusHealthy {
 		state.FailureStartedAt = &now
+		state.RecoveredAt = nil
+		state.RecreateAttempts = 0
 	}
-	state.RecoveredAt = nil
 
 	// 2a. Check Grace Period (COOLING_DOWN)
 	if state.LastActionTimestamp != nil {
